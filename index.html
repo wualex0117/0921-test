@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LINE AI 好友「小光」完整建置指南</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    .step-card { transition: box-shadow 0.2s; }
+    .step-card:hover { box-shadow: 0 4px 24px 0 rgba(0,0,0,0.10); }
+    .code-block { font-family: 'Courier New', Courier, monospace; }
+    .badge { display: inline-block; border-radius: 9999px; padding: 2px 12px; font-size: 12px; font-weight: 600; }
+    details summary { cursor: pointer; }
+    details[open] summary .chevron { transform: rotate(90deg); }
+    .chevron { transition: transform 0.2s; display: inline-block; }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased">
+
+  <!-- Header -->
+  <div class="max-w-3xl mx-auto px-4 py-10">
+    <div class="text-center mb-10">
+      <div class="text-5xl mb-3">🤖</div>
+      <h1 class="text-3xl font-bold text-[var(--foreground)] mb-2">LINE AI 好友「小光」</h1>
+      <p class="text-[var(--muted-foreground)] text-base">完整建置步驟紀錄 — 從零到上線</p>
+      <div class="flex flex-wrap justify-center gap-2 mt-4">
+        <span class="badge bg-green-100 text-green-700">Python 3.10</span>
+        <span class="badge bg-blue-100 text-blue-700">FastAPI</span>
+        <span class="badge bg-purple-100 text-purple-700">Google Gemini</span>
+        <span class="badge bg-[#00C300]/10 text-[#00C300]">LINE Bot SDK v3</span>
+        <span class="badge bg-orange-100 text-orange-700">Cloudflare Tunnel</span>
+      </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="relative">
+      <div class="absolute left-6 top-0 bottom-0 w-0.5 bg-[var(--border)]"></div>
+
+      <!-- PHASE 1 -->
+      <div class="mb-2 ml-16">
+        <span class="text-xs font-bold tracking-widest uppercase text-[var(--muted-foreground)]">Phase 1 · 構思與規劃</span>
+      </div>
+
+      <!-- Step 1 -->
+      <div class="relative flex gap-4 mb-6">
+        <div class="flex-shrink-0 w-12 h-12 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-bold text-lg z-10">1</div>
+        <div class="flex-1 step-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 class="font-semibold text-[var(--foreground)] text-base mb-1">💡 決定建置 LINE Bot</h3>
+          <p class="text-[var(--muted-foreground)] text-sm mb-3">從三大類想法（AI 助理、記帳、校園工具）中，選擇了最有潛力的 <strong>AI 多模態智慧隨身好友</strong>。</p>
+          <details class="mt-2">
+            <summary class="text-sm text-[var(--primary)] font-medium flex items-center gap-1">
+              <span class="chevron">▶</span> 選定的功能清單
+            </summary>
+            <ul class="mt-2 text-sm text-[var(--muted-foreground)] space-y-1 pl-4 list-disc">
+              <li>文字多輪對話（具上下文記憶）</li>
+              <li>照片辨識（收據、講義、白板）</li>
+              <li>語音訊息轉逐字稿與摘要</li>
+              <li>網址文章速讀（3 點懶人包）</li>
+            </ul>
+          </details>
+        </div>
+      </div>
+
+      <!-- PHASE 2 -->
+      <div class="mb-2 ml-16">
+        <span class="text-xs font-bold tracking-widest uppercase text-[var(--muted-foreground)]">Phase 2 · 環境建置</span>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="relative flex gap-4 mb-6">
+        <div class="flex-shrink-0 w-12 h-12 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-bold text-lg z-10">2</div>
+        <div class="flex-1 step-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 class="font-semibold text-[var(--foreground)] text-base mb-1">📁 建立專案與虛擬環境</h3>
+          <p class="text-[var(--muted-foreground)] text-sm mb-3">在本機建立獨立的 Python 虛擬環境，確保套件版本不互相衝突。</p>
+          <div class="code-block bg-[var(--sidebar)] rounded-lg p-3 text-xs text-[var(--foreground)] overflow-x-auto">
+            <div class="text-[var(--muted-foreground)] mb-1"># 建立資料夾與虛擬環境</div>
+            <div>mkdir line-ai-assistant</div>
+            <div>python -m venv .venv</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="relative flex gap-4 mb-6">
+        <div class="flex-shrink-0 w-12 h-12 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-bold text-lg z-10">3</div>
+        <div class="flex-1 step-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 class="font-semibold text-[var(--foreground)] text-base mb-1">📦 安裝所需套件</h3>
+          <div class="code-block bg-[var(--sidebar)] rounded-lg p-3 text-xs text-[var(--foreground)] overflow-x-auto">
+            <div class="text-[var(--muted-foreground)] mb-1"># requirements.txt</div>
+            <div>fastapi &nbsp; uvicorn[standard]</div>
+            <div>line-bot-sdk&gt;=3.12.0</div>
+            <div>google-genai &nbsp; python-dotenv</div>
+            <div>pydantic-settings &nbsp; httpx</div>
+            <div>beautifulsoup4 &nbsp; pyngrok</div>
+          </div>
+          <div class="mt-2 code-block bg-[var(--sidebar)] rounded-lg p-3 text-xs text-[var(--foreground)] overflow-x-auto">
+            <div>.venv\Scripts\pip install -r requirements.txt</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PHASE 3 -->
+      <div class="mb-2 ml-16">
+        <span class="text-xs font-bold tracking-widest uppercase text-[var(--muted-foreground)]">Phase 3 · 取得 API 金鑰</span>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="relative flex gap-4 mb-6">
+        <div class="flex-shrink-0 w-12 h-12 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-bold text-lg z-10">4</div>
+        <div class="flex-1 step-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 class="font-semibold text-[var(--foreground)] text-base mb-1">🔑 取得三組必要金鑰</h3>
+          <div class="space-y-3 mt-2">
+            <div class="flex gap-3 items-start">
+              <span class="text-lg flex-shrink-0">①</span>
+              <div>
+                <p class="text-sm font-medium text-[var(--foreground)]">LINE Channel Secret</p>
+                <p class="text-xs text-[var(--muted-foreground)]">LINE Developers Console → Messaging API → Channel Secret</p>
+              </div>
+            </div>
+            <div class="flex gap-3 items-start">
+              <span class="text-lg flex-shrink-0">②</span>
+              <div>
+                <p class="text-sm font-medium text-[var(--foreground)]">LINE Channel Access Token</p>
+                <p class="text-xs text-[var(--muted-foreground)]">LINE Developers Console → Messaging API → Issue Long-lived Token</p>
+              </div>
+            </div>
+            <div class="flex gap-3 items-start">
+              <span class="text-lg flex-shrink-0">③</span>
+              <div>
+                <p class="text-sm font-medium text-[var(--foreground)]">Google Gemini API Key</p>
+                <p class="text-xs text-[var(--muted-foreground)]">Google AI Studio (aistudio.google.com) → Get API Key → Create API Key</p>
+              </div>
+            </div>
+          </div>
+          <div class="mt-3 code-block bg-[var(--sidebar)] rounded-lg p-3 text-xs text-[var(--foreground)] overflow-x-auto">
+            <div class="text-[var(--muted-foreground)] mb-1"># .env 設定檔</div>
+            <div>LINE_CHANNEL_SECRET=你的_secret</div>
+            <div>LINE_CHANNEL_ACCESS_TOKEN=你的_token</div>
+            <div>GEMINI_API_KEY=你的_api_key</div>
+            <div>BOT_NAME=小光</div>
+            <div>GEMINI_MODEL=gemini-3.5-flash</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PHASE 4 -->
+      <div class="mb-2 ml-16">
+        <span class="text-xs font-bold tracking-widest uppercase text-[var(--muted-foreground)]">Phase 4 · 撰寫程式碼</span>
+      </div>
+
+      <!-- Step 5 -->
+      <div class="relative flex gap-4 mb-6">
+        <div class="flex-shrink-0 w-12 h-12 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-bold text-lg z-10">5</div>
+        <div class="flex-1 step-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 class="font-semibold text-[var(--foreground)] text-base mb-1">💻 核心程式架構 <span class="badge bg-[var(--accent)] text-[var(--accent-foreground)] ml-1">bot.py（單一檔案完整版）</span></h3>
+          <p class="text-[var(--muted-foreground)] text-sm mb-3">所有模組整合成一個 <code class="bg-[var(--sidebar)] px-1 rounded text-xs">bot.py</code>，8 大區塊清楚分明：</p>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-[var(--sidebar)] rounded-lg p-3 text-xs">
+              <div class="font-semibold text-[var(--foreground)] mb-1">🔧 Settings（設定區）</div>
+              <div class="text-[var(--muted-foreground)]">從 .env 載入金鑰，使用 Pydantic BaseSettings</div>
+            </div>
+            <div class="bg-[var(--sidebar)] rounded-lg p-3 text-xs">
+              <div class="font-semibold text-[var(--foreground)] mb-1">🤖 AIService（AI服務）</div>
+              <div class="text-[var(--muted-foreground)]">chat / analyze_image / transcribe_audio / summarize_url</div>
+            </div>
+            <div class="bg-[var(--sidebar)] rounded-lg p-3 text-xs">
+              <div class="font-semibold text-[var(--foreground)] mb-1">📨 LINE 事件處理</div>
+              <div class="text-[var(--muted-foreground)]">Text / Image / Audio / Follow 事件分派</div>
+            </div>
+            <div class="bg-[var(--sidebar)] rounded-lg p-3 text-xs">
+              <div class="font-semibold text-[var(--foreground)] mb-1">🌐 FastAPI 應用</div>
+              <div class="text-[var(--muted-foreground)]">/ 首頁、/health 監控、/callback Webhook</div>
+            </div>
+          </div>
+          <details class="mt-3">
+            <summary class="text-sm text-[var(--primary)] font-medium flex items-center gap-1">
+              <span class="chevron">▶</span> 小光的 AI 人格設定（System Instruction）
+            </summary>
+            <div class="mt-2 code-block bg-[var(--sidebar)] rounded-lg p-3 text-xs text-[var(--foreground)]">
+              <div>你是使用者的專屬 AI 摯友「小光」。</div>
+              <div>1. 溫暖真誠、富幽默感的好朋友</div>
+              <div>2. 台灣口吻正體中文，適度 Emoji</div>
+              <div>3. 知識豐富，幫朋友解答各類問題</div>
+              <div>4. 回覆適中，排版清晰易讀</div>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <!-- PHASE 5 -->
+      <div class="mb-2 ml-16">
+        <span class="text-xs font-bold tracking-widest uppercase text-[var(--muted-foreground)]">Phase 5 · 啟動與串接</span>
+      </div>
+
+      <!-- Step 6 -->
+      <div class="relative flex gap-4 mb-6">
+        <div class="flex-shrink-0 w-12 h-12 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-bold text-lg z-10">6</div>
+        <div class="flex-1 step-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 class="font-semibold text-[var(--foreground)] text-base mb-1">🚀 啟動伺服器</h3>
+          <div class="code-block bg-[var(--sidebar)] rounded-lg p-3 text-xs text-[var(--foreground)] overflow-x-auto">
+            <div class="text-[var(--muted-foreground)] mb-1"># 啟動 LINE Bot 伺服器（Port 8000）</div>
+            <div>.venv\Scripts\uvicorn bot:app --host 0.0.0.0 --port 8000 --reload</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 7 -->
+      <div class="relative flex gap-4 mb-6">
+        <div class="flex-shrink-0 w-12 h-12 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-bold text-lg z-10">7</div>
+        <div class="flex-1 step-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 class="font-semibold text-[var(--foreground)] text-base mb-1">🌐 Cloudflare Tunnel（免費外網穿透）</h3>
+          <p class="text-[var(--muted-foreground)] text-sm mb-2">LINE 伺服器需要公開 HTTPS 網址才能打到你的電腦，用 Cloudflare Tunnel 一鍵解決，不需帳號！</p>
+          <div class="code-block bg-[var(--sidebar)] rounded-lg p-3 text-xs text-[var(--foreground)] overflow-x-auto">
+            <div class="text-[var(--muted-foreground)] mb-1"># 安裝</div>
+            <div>winget install --id Cloudflare.cloudflared</div>
+            <div class="mt-2 text-[var(--muted-foreground)] mb-1"># 啟動（會產生公開 HTTPS 網址）</div>
+            <div>cloudflared tunnel --url http://localhost:8000</div>
+            <div class="mt-2 text-green-600"># → https://xxxxx.trycloudflare.com</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 8 -->
+      <div class="relative flex gap-4 mb-6">
+        <div class="flex-shrink-0 w-12 h-12 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-bold text-lg z-10">8</div>
+        <div class="flex-1 step-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 class="font-semibold text-[var(--foreground)] text-base mb-1">🔗 設定 LINE Webhook</h3>
+          <ol class="text-sm text-[var(--muted-foreground)] space-y-2 list-decimal pl-4">
+            <li>前往 <strong>LINE Developers Console</strong> → Messaging API 分頁</li>
+            <li>在 <strong>Webhook URL</strong> 填入：<code class="bg-[var(--sidebar)] px-1 rounded text-xs">https://xxxxx.trycloudflare.com/callback</code></li>
+            <li>開啟 <strong>Use webhook</strong> 開關（切為 ON）</li>
+            <li>點擊 <strong>Verify</strong>，出現 <span class="text-green-600 font-semibold">Success</span> 即成功</li>
+            <li>關閉 <strong>Auto-reply messages（自動回應）</strong> 設為停用</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- Step 9 -->
+      <div class="relative flex gap-4 mb-6">
+        <div class="flex-shrink-0 w-12 h-12 rounded-full bg-green-500 text-white flex items-center justify-center font-bold text-lg z-10">✓</div>
+        <div class="flex-1 step-card bg-green-50 border border-green-200 rounded-xl p-5">
+          <h3 class="font-semibold text-green-800 text-base mb-1">🎉 加好友，開始聊天！</h3>
+          <p class="text-green-700 text-sm">掃描 QR Code 或搜尋 LINE ID：<code class="bg-white px-1 rounded text-xs">@134vndls</code></p>
+          <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+            <div class="bg-white rounded-lg p-2 border border-green-100">
+              <div class="font-semibold text-green-700">💬 傳文字</div>
+              <div class="text-green-600">多輪對話，記得你說的話</div>
+            </div>
+            <div class="bg-white rounded-lg p-2 border border-green-100">
+              <div class="font-semibold text-green-700">📸 傳照片</div>
+              <div class="text-green-600">辨識收據、講義、白板</div>
+            </div>
+            <div class="bg-white rounded-lg p-2 border border-green-100">
+              <div class="font-semibold text-green-700">🎙️ 傳語音</div>
+              <div class="text-green-600">自動轉逐字稿與摘要</div>
+            </div>
+            <div class="bg-white rounded-lg p-2 border border-green-100">
+              <div class="font-semibold text-green-700">🔗 傳網址</div>
+              <div class="text-green-600">3 點精華懶人包</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PHASE 6 -->
+      <div class="mb-2 ml-16">
+        <span class="text-xs font-bold tracking-widest uppercase text-[var(--muted-foreground)]">Phase 6 · 版本控制與發布</span>
+      </div>
+
+      <!-- Step 10 -->
+      <div class="relative flex gap-4 mb-6">
+        <div class="flex-shrink-0 w-12 h-12 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-bold text-lg z-10">10</div>
+        <div class="flex-1 step-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 class="font-semibold text-[var(--foreground)] text-base mb-1">📤 Git 初始化與 Push 到 GitHub</h3>
+          <div class="code-block bg-[var(--sidebar)] rounded-lg p-3 text-xs text-[var(--foreground)] overflow-x-auto space-y-1">
+            <div class="text-[var(--muted-foreground)]"># 安裝 Git（若未安裝）</div>
+            <div>winget install --id Git.Git</div>
+            <div class="mt-2 text-[var(--muted-foreground)]"># 初始化並提交</div>
+            <div>git init -b main</div>
+            <div>git add .</div>
+            <div>git commit -m "feat: Add single-file LINE AI Friend Bot (bot.py)"</div>
+            <div class="mt-2 text-[var(--muted-foreground)]"># 設定遠端並推送</div>
+            <div>git remote add origin https://github.com/wualex0117/0921-test.git</div>
+            <div>git push -u origin main</div>
+          </div>
+          <div class="mt-2 text-xs text-[var(--muted-foreground)]">
+            ⚠️ .env 已加入 .gitignore，API 金鑰不會上傳至 GitHub
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 11 -->
+      <div class="relative flex gap-4 mb-6">
+        <div class="flex-shrink-0 w-12 h-12 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-bold text-lg z-10">11</div>
+        <div class="flex-1 step-card bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+          <h3 class="font-semibold text-[var(--foreground)] text-base mb-1">👤 建立 GitHub Profile 個人頁面</h3>
+          <p class="text-[var(--muted-foreground)] text-sm mb-2">建立與帳號同名的 Repository（<code class="bg-[var(--sidebar)] px-1 rounded text-xs">wualex0117/wualex0117</code>），裡面的 README.md 會自動顯示在個人頁面上。</p>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="bg-[var(--sidebar)] rounded-lg p-2">✅ 動態打字動畫</div>
+            <div class="bg-[var(--sidebar)] rounded-lg p-2">✅ 專案展示卡片</div>
+            <div class="bg-[var(--sidebar)] rounded-lg p-2">✅ 技術徽章</div>
+            <div class="bg-[var(--sidebar)] rounded-lg p-2">✅ GitHub 統計圖表</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 快速指令卡 -->
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-6 mt-4">
+      <h2 class="font-bold text-[var(--foreground)] text-lg mb-4">⚡ 日後重新啟動小光（兩個步驟）</h2>
+      <div class="space-y-3">
+        <div>
+          <div class="text-xs text-[var(--muted-foreground)] mb-1">Step 1 · 啟動伺服器</div>
+          <div class="code-block bg-[var(--sidebar)] rounded-lg p-3 text-xs text-[var(--foreground)] overflow-x-auto">
+            cd "C:\Users\NDHU CSIE\.gemini\antigravity\scratch\line-ai-assistant"<br>
+            .\.venv\Scripts\uvicorn bot:app --host 0.0.0.0 --port 8000
+          </div>
+        </div>
+        <div>
+          <div class="text-xs text-[var(--muted-foreground)] mb-1">Step 2 · 開啟 Cloudflare Tunnel（另一個終端機）</div>
+          <div class="code-block bg-[var(--sidebar)] rounded-lg p-3 text-xs text-[var(--foreground)] overflow-x-auto">
+            & "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:8000
+          </div>
+        </div>
+        <div class="text-xs text-amber-600 bg-amber-50 rounded-lg p-3 border border-amber-200">
+          ⚠️ 每次重開 Cloudflare Tunnel 會產生新網址，記得到 LINE Developers Console 更新 Webhook URL！
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center mt-8 pb-8 text-[var(--muted-foreground)] text-xs">
+      <p>🤖 小光 LINE AI 好友 · 建置日期：2026-10-05</p>
+      <p class="mt-1">GitHub: <a href="https://github.com/wualex0117/0921-test" class="text-[var(--primary)] hover:underline">wualex0117/0921-test</a></p>
+    </div>
+  </div>
+
+  <script>
+    // 讓 details 展開動畫更順暢
+    document.querySelectorAll('details').forEach(d => {
+      d.addEventListener('toggle', () => {
+        d.querySelector('.chevron').style.transform = d.open ? 'rotate(90deg)' : 'rotate(0deg)';
+      });
+    });
+  </script>
+</body>
+</html>
