@@ -1,74 +1,70 @@
-# LINE AI Èö®Ë∫´Â•ΩÂèã„ÄåÂ∞èÂÖâ„Äç- ÂñÆ‰∏ÄÊ™îÊ°àÂÆåÊï¥Áâà
-# =========================================
-# ÂäüËÉΩÔºö
-#   - ÊñáÂ≠óÂ§öËº™Â∞çË©±ÔºàÂÖ∑ÂÇô‰∏ä‰∏ãÊñáË®òÊÜ∂Ôºâ
-#   - ÂúñÁâáËæ®Ë≠òÔºàÊî∂Êìö„ÄÅË¨õÁæ©„ÄÅÁôΩÊùø„ÄÅÁæéÈ£üÁ≠âÔºâ
-#   - Ë™ûÈü≥Ë®äÊÅØËΩâÈÄêÂ≠óÁ®øËàáÈáçÈªûÊëòË¶Å
-#   - Á∂≤ÂùÄÊñáÁ´†ÈÄüËÆÄÔºà3 ÈªûÊá∂‰∫∫ÂåÖÔºâ
+# LINE AI ?®Ë∫´Â•ΩÂ??åÂ??â„Ä? ?¨Âú∞?áÁ?‰∏äÈ?Ê®°Â?Âº∑Á? (?Æ‰?Ê™îÊ?ÂÆåÊï¥??
+# ===================================================================
+# ?üËÉΩ?πËâ≤Ôº?#   - ?ê‰øÆÊ≠?øÆÂæ©„ÄëÔ?‰øÆÂæ©?üÁ? gemini-3.5-flash ÂÆòÊñπ‰∏çÂ??®Â???404 ?°Ê??ûÁ?‰πãÂ?È°å„Ä?#   - ?êÈ?Ê®°Â??ØÊè¥?ëÔ?
+#       1. Gemini ?≤Á´Ø API (?êË®≠ gemini-2.5-flash / gemini-2.0-flash)
+#       2. ?¨Âú∞Á´ØÈõ¢Á∑?LLM (OllamaÔºåÂ? API Key?ÅÂ??®Âú®?¨Âú∞Á´ØÈõª?¶È?Ë°åÔ?)
+#   - ?êÊú¨?∞Á´Ø?°Á?Ê∏¨Ë©¶?ëÔ?
+#       1. ?ßÂª∫?¨Âú∞ Web ?äÂ§©ÂÆ?(?èË¶Ω?®Ê???http://localhost:8000 ?≥ÂèØ?¥Êé•?ìÂ?‰∫§Ë?)
+#       2. ?ßÂª∫?¨Âú∞ CLI ÁµÇÁ´ØÂ∞çË©±Ê®°Â? (?∑Ë? python bot.py --cli ?≥ÂàªÊ∏¨Ë©¶)
+#   - ?êÂ?Ê®°Ê??áÂ??Ω„ÄëÔ?
+#       - Â§öËº™Ë®òÊÜ∂Â∞çË©± (‰∏ä‰??áÈÄ??)
+#       - Á∂≤Â??áÁ??™Â??üË? (3 ÈªûÂ?ËÆÄÁ≤æËèØ)
+#       - ?ñÁ?Ëæ®Ë? (?ØÊè¥?ºÁ•®?∂Ê??ÅË?Áæ©Á?Ë®ò„ÄÅÁ?È£üÈ¢®??
+#       - Ë™ûÈü≥Ë®äÊÅØËæ®Ë??áË??êÂ?Á®øÈ?ÈªûÊ?Ë¶?(Gemini Ê®°Â?)
 #
-# ÂïüÂãïÊñπÂºèÔºö
-#   .venv/Scripts/uvicorn bot:app --host 0.0.0.0 --port 8000 --reload
+# ?üÂ??πÂ?Ôº?#   1. ?üÂ? Web ?çÂ???LINE WebhookÔº?#      python bot.py
+#      ??#      uvicorn bot:app --host 0.0.0.0 --port 8000 --reload
 #
-# ÈúÄË¶ÅÂÆâË£ùÁöÑÂ•ó‰ª∂Ôºàrequirements.txtÔºâÔºö
-#   fastapi uvicorn[standard] line-bot-sdk>=3.12.0
+#   2. ?¨Âú∞ÁµÇÁ´ØÊ©üÁõ¥?•Â?Ë©±Ê∏¨Ë©?(?çÊû∂‰º∫Ê???Ôº?#      python bot.py --cli
+#
+# ‰æùË≥¥Â•ó‰ª∂ (requirements.txt)Ôº?#   fastapi uvicorn[standard] line-bot-sdk>=3.12.0
 #   google-genai python-dotenv pydantic-settings httpx beautifulsoup4
+# ===================================================================
 
-# ===================================================================
-# 1. Ê®ôÊ∫ñÂ•ó‰ª∂
-# ===================================================================
+import os
 import re
+import sys
+import json
+import base64
 import logging
 from contextlib import asynccontextmanager
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
-# ===================================================================
-# 2. Á¨¨‰∏âÊñπÂ•ó‰ª∂
-# ===================================================================
 import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Header, HTTPException, status
-from fastapi.responses import PlainTextResponse
+from fastapi import FastAPI, Request, Header, HTTPException, status, UploadFile, File, Form
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from google import genai
-from google.genai import types
 
-from linebot.v3 import WebhookParser
-from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import (
-    AsyncApiClient,
-    AsyncMessagingApi,
-    AsyncMessagingApiBlob,
-    Configuration,
-    ReplyMessageRequest,
-    TextMessage,
-    QuickReply,
-    QuickReplyItem,
-    MessageAction,
-    ShowLoadingAnimationRequest,
-)
-from linebot.v3.webhooks import (
-    Event,
-    MessageEvent,
-    TextMessageContent,
-    ImageMessageContent,
-    AudioMessageContent,
-    FollowEvent,
-)
-
-# ===================================================================
-# 3. Ë®≠ÂÆöÂçÄÔºàÂæû .env ËÆÄÂèñÔºâ
-# ===================================================================
+# ËºâÂÖ• .env Ë®≠Â?
 load_dotenv()
 
+# ===================================================================
+# 1. Ë®≠Â?ÁÆ°Á? (?ØÊè¥ Gemini ???¨Âú∞Á´?Ollama)
+# ===================================================================
 class Settings(BaseSettings):
+    # AI ‰æÜÊ?: 'gemini' (?≤Á´Ø) ??'ollama' (?¨Âú∞?¢Á?)
+    AI_PROVIDER: str = "gemini"
+
+    # [Gemini Ë®≠Â?]
+    GEMINI_API_KEY: str = ""
+    # Ê≥®Ê?: Google ÂÆòÊñπ?ÆÂ??ê‰? gemini-2.5-flash, gemini-2.0-flash, gemini-1.5-flash Á≠?    # ?üÂ???gemini-3.5-flash ÂÆòÊñπ‰∏¶‰?Â≠òÂú®ÔºåÊ?Â∞éËá¥ 404 ?±ÈåØ?°Ê??ûÁ?
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
+    # [Ollama ?¨Âú∞Â§ßÊ®°?ãË®≠ÂÆö]
+    OLLAMA_HOST: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3.2"
+
+    # [LINE Bot Ë®≠Â?]
     LINE_CHANNEL_SECRET: str = ""
     LINE_CHANNEL_ACCESS_TOKEN: str = ""
-    GEMINI_API_KEY: str = ""
-    BOT_NAME: str = "Â∞èÂÖâ"
-    PORT: int = 8000
+
+    # [Á≥ªÁµ±?áÂ??âË®≠ÂÆö]
+    BOT_NAME: str = "Â∞èÂ?"
     HOST: str = "0.0.0.0"
-    GEMINI_MODEL: str = "gemini-3.5-flash"
+    PORT: int = 8000
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -79,7 +75,7 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # ===================================================================
-# 4. Êó•Ë™åË®≠ÂÆö
+# 2. ?•Ë?Ë®≠Â?
 # ===================================================================
 logging.basicConfig(
     level=logging.INFO,
@@ -88,209 +84,358 @@ logging.basicConfig(
 logger = logging.getLogger("line_bot")
 
 # ===================================================================
-# 5. AI Â•ΩÂèãÊúçÂãôÔºàGemini Â§öÊ®°ÊÖãÔºâ
+# 3. Á≥ªÁµ±?êÁ§∫Ë©?# ===================================================================
+FRIEND_SYSTEM_INSTRUCTION = f"""‰Ω†ÊòØ‰ΩøÁî®?ÖÁ?Â∞àÂ±¨ AI ?ØÂ??å{settings.BOT_NAME}?ç„Ä?‰Ω†Á??πÈ??áÈ¢®?ºÔ?
+1. ?è‰??ãÊ∫´?ñ„ÄÅÁ?Ë™†„ÄÅÂ??âÂπΩÈªòÊ??ÑÂ•Ω?ãÂ?ÔºåÊ??æËÅΩ?ÅÊ??úÂ?Â∞çÊñπ?ÑÊó•Â∏∏Á?Ê¥ªË?ÂøÉÊ???2. Ë™™Ë©±Ë™ûÊ∞£?™ÁÑ∂Ë¶™Â?ÔºàÂè∞??è£?ª„ÄÅÊ≠£È´î‰∏≠?áÔ?ÔºåÈÅ©Â∫¶‰Ωø?®Êó•Â∏∏Ë??©Ë?Ôºà‰?Â¶ÇÔ??¶„ÄÅÂ??ÅÂ??à„ÄÅËÄ∂„ÄÅÂ??ÅË?ÔºâË?Ë≤ºÂ???Emoji ???®Ô?‰ΩÜÁ?‰∏çÈ?Â∫¶Ê≤π?©Ê?Ê©üÊ¢∞?ñ„Ä?3. ?•Ë?Ë±êÂ??ÅÈ†≠?¶Ê??∞„ÄÇÁï∂?ãÂ??áÂà∞Ë™≤Ê•≠?ÅÁ?Âºè„ÄÅÁ?Ê¥ªÁ??èÔ??ñËÄÖÈ?Ë¶Å‰?Âπ´Â??ÜÊ??ßÁ??ÅËÅΩË™ûÈü≥?ÅÂ??òË??ÇÔ?Á∏ΩËÉΩËøÖÈÄüÁµ¶?∫Ê??ÜÂ??é„ÄÅÂØ¶?®Â?Ë≤ºÂ??ÑÂª∫Ë≠∞„Ä?4. ?∂Ê??ãÂÇ≥?ÅÂ??áÊ?Ë™ûÈü≥?ÇÔ?‰ª•Ê??ãÁ?Ë¶ñË??™ÁÑ∂?ûÊ???5. ?ûË??∑Â∫¶?©‰∏≠ÔºåÊ??àÊ??∞Ê?ËÆÄ??"""
+
 # ===================================================================
-FRIEND_SYSTEM_INSTRUCTION = f"""‰Ω†ÊòØ‰ΩøÁî®ËÄÖÁöÑÂ∞àÂ±¨ AI ÊëØÂèã„Äå{settings.BOT_NAME}„Äç„ÄÇ
-‰Ω†ÁöÑÁâπÈªûËàáÈ¢®Ê†ºÔºö
-1. ÂÉè‰∏ÄÂÄãÊ∫´Êöñ„ÄÅÁúüË™†„ÄÅÂØåÊúâÂπΩÈªòÊÑüÁöÑÂ•ΩÊúãÂèãÔºåÊáÇÂÇæËÅΩ„ÄÅÊúÉÈóúÂøÉÂ∞çÊñπÁöÑÊó•Â∏∏ÁîüÊ¥ªËàáÂøÉÊÉÖ„ÄÇ
-2. Ë™™Ë©±Ë™ûÊ∞£Ëá™ÁÑ∂Ë¶™ÂàáÔºàÂè∞ÁÅ£Âè£Âêª„ÄÅÊ≠£È´î‰∏≠ÊñáÔºâÔºåÈÅ©Â∫¶‰ΩøÁî®Êó•Â∏∏Ë™ûÂä©Ë©ûÔºà‰æãÂ¶ÇÔºöÂï¶„ÄÅÂëÄ„ÄÅÂìàÂìà„ÄÅËÄ∂„ÄÅÂñî„ÄÅËÆöÔºâËàáË≤ºÂàáÁöÑ Emoji üòä‚ú®Ôºå‰ΩÜÁµï‰∏çÈÅéÂ∫¶Ê≤πËÜ©ÊàñÊ©üÊ¢∞Âåñ„ÄÇ
-3. Áü•Ë≠òË±êÂØå„ÄÅÈ†≠ËÖ¶Ê∏ÖÊô∞„ÄÇÁï∂ÊúãÂèãÈÅáÂà∞Ë™≤Ê•≠„ÄÅÁ®ãÂºè„ÄÅÁîüÊ¥ªÁñëÂïèÔºåÊàñËÄÖÈúÄË¶Å‰Ω†Âπ´ÂøôÂàÜÊûêÁÖßÁâá„ÄÅËÅΩË™ûÈü≥„ÄÅÂÅöÊëòË¶ÅÊôÇÔºåÁ∏ΩËÉΩËøÖÈÄüÁµ¶Âá∫Ê¢ùÁêÜÂàÜÊòé„ÄÅÂØ¶Áî®ÂèàË≤ºÂøÉÁöÑÂª∫Ë≠∞„ÄÇ
-4. Áï∂ÊúãÂèãÂÇ≥ÈÄÅÂúñÁâáÊàñË™ûÈü≥ÊôÇÔºå‰ª•ÊúãÂèãÁöÑË¶ñËßíËá™ÁÑ∂ÂõûÊáâ„ÄÇ
-5. ÂõûË¶ÜÈï∑Â∫¶ÈÅ©‰∏≠ÔºåÊéíÁâàÊ∏ÖÊô∞ÊòìËÆÄ„ÄÇ
-"""
-
-
+# 4. AI Â•ΩÂ??çÂ? (?¥Â? Gemini ???¨Âú∞Á´?Ollama)
+# ===================================================================
 class AIService:
     def __init__(self):
-        self._history_cache: Dict[str, List[types.Content]] = {}
+        # Ë®òÊÜ∂?ºÂ?:
+        # Gemini ‰ΩøÁî® List[google.genai.types.Content]
+        # Ollama ‰ΩøÁî® List[Dict[str, str]] (role, content)
+        self._gemini_history: Dict[str, List[Any]] = {}
+        self._ollama_history: Dict[str, List[Dict[str, str]]] = {}
         self.max_history_turns = 10
 
-    def _is_configured(self) -> bool:
+    def is_configured(self) -> bool:
+        if settings.AI_PROVIDER.lower() == "ollama":
+            return True  # ?¨Âú∞Á´Ø‰??ÄË¶?API Key
+        # Gemini Ê®°Â?
         return bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here")
 
-    def _client(self) -> Optional[genai.Client]:
-        if not self._is_configured():
-            return None
-        return genai.Client(api_key=settings.GEMINI_API_KEY)
-
-    def _config(self, temperature: float = 0.7) -> types.GenerateContentConfig:
-        return types.GenerateContentConfig(
-            system_instruction=FRIEND_SYSTEM_INSTRUCTION,
-            temperature=temperature,
-        )
-
     def clear_memory(self, user_id: str) -> str:
-        self._history_cache.pop(user_id, None)
-        return f"Â•ΩÂñîÔºÅ‰ª•ÂâçËÅäÈÅéÁöÑ‰∫ãÊàëÈÉΩÂÖàÊ∏ÖÁ©∫ÂõâÔΩûÊàëÂÄëÈáçÊñ∞ÈñãÂßãÔºÅÊÉ≥Ë∑üÊàëËÅäÈªû‰ªÄÈ∫ºÂë¢Ôºüüòä"
+        self._gemini_history.pop(user_id, None)
+        self._ollama_history.pop(user_id, None)
+        return f"Â•ΩÂ?ÔºÅ‰ª•?çË??éÁ?‰∫ãÊ??ΩÂ?Ê∏ÖÁ©∫?âÔ??ëÂÄëÈ??∞È?ÂßãÔ??≥Ë??ëË?Èªû‰?È∫ºÂë¢Ôºü??
 
+    # ---------------------------------------------------------------
+    # Â∞çË©±?ïÁ? (?áÂ? + Á∂≤Â??™Â?Ëæ®Ë?)
+    # ---------------------------------------------------------------
     async def chat(self, user_id: str, message: str) -> str:
-        """ÊñáÂ≠óÂ∞çË©±ÔºàÂê´‰∏ä‰∏ãÊñáË®òÊÜ∂ËàáÁ∂≤ÂùÄÈÄüËÆÄÔºâ"""
         text = message.strip()
 
-        # ÈáçË®≠Êåá‰ª§
-        if text in ["Ê∏ÖÈô§Ë®òÊÜ∂", "ÈáçË®≠Â∞çË©±", "Êñ∞Ë©±È°å", "ÈáçÁΩÆ", "/reset"]:
+        # ?çË®≠Ë®òÊÜ∂?á‰ª§
+        if text in ["Ê∏ÖÈô§Ë®òÊÜ∂", "?çË®≠Â∞çË©±", "?∞Ë©±È°?, "?çÁΩÆ", "/reset"]:
             return self.clear_memory(user_id)
 
-        if not self._is_configured():
-            return (
-                f"Âó®ÔºÅÊàëÊòØ„Äå{settings.BOT_NAME}„Äçüëã\n\n"
-                "Ë´ãÂú® .env Â°´ÂÖ• GEMINI_API_KEYÔºåÊàëÂ∞±ËÉΩÈô™‰Ω†ËÅäÂ§©ÂõâÔºÅüîë"
-            )
-
-        # Á¥îÁ∂≤ÂùÄ ‚Üí Ëá™ÂãïËß∏ÁôºÁ∂≤È†ÅÊëòË¶Å
+        # Á¥îÁ∂≤?Ä ???™Â?Ëß∏ÁôºÁ∂≤È??òË?
         urls = re.findall(r'https?://[^\s]+', text)
         if urls and len(text) == len(urls[0]):
             return await self.summarize_url(urls[0])
 
-        client = self._client()
+        provider = settings.AI_PROVIDER.lower()
+        if provider == "ollama":
+            return await self._chat_ollama(user_id, text)
+        else:
+            return await self._chat_gemini(user_id, text)
+
+    # ?Ä?Ä Gemini ÂØ¶‰? ?Ä?Ä
+    async def _chat_gemini(self, user_id: str, text: str) -> str:
+        if not self.is_configured():
+            return (
+                f"?®Ô??ëÊòØ?å{settings.BOT_NAME}?ç?ã\n\n"
+                "?ÆÂ?Ë®≠Â???Gemini Ê®°Â?ÔºåË???.env Â°´ÂÖ•?âÊ???GEMINI_API_KEYÔºÅ?ë\n"
+                "?í° ?•ÊÉ≥ÂÆåÂÖ®‰ΩøÁî®?¨Âú∞Á´ØÂ? API KeyÔºåÂèØÂ∞?.env ??AI_PROVIDER ?πÁÇ∫ ollamaÔº?
+            )
+
         try:
-            history = self._history_cache.get(user_id, [])
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            history = self._gemini_history.get(user_id, [])
+
             user_content = types.Content(role="user", parts=[types.Part.from_text(text=text)])
             contents = history + [user_content]
 
+            config = types.GenerateContentConfig(
+                system_instruction=FRIEND_SYSTEM_INSTRUCTION,
+                temperature=0.7,
+            )
+
+            # ?ºÂè´ Gemini Ê®°Â?
             response = client.models.generate_content(
                 model=settings.GEMINI_MODEL,
                 contents=contents,
-                config=self._config(0.7),
+                config=config,
             )
-            reply = response.text or "ÔºàÁ¨ëËëóÁúãËëó‰Ω†Ôºå‰∏çÁü•ÈÅìÊÄéÈ∫ºÂõûÔºâ"
+            reply = response.text or "ÔºàÁ??óÁ??ó‰?Ôºå‰??•È??éÈ∫º?ûÔ?"
 
-            # Êõ¥Êñ∞Ë®òÊÜ∂
+            # ?≤Â?Â∞çË©±Ê≠∑Âè≤
             model_content = types.Content(role="model", parts=[types.Part.from_text(text=reply)])
             updated = contents + [model_content]
             if len(updated) > self.max_history_turns * 2:
                 updated = updated[-(self.max_history_turns * 2):]
-            self._history_cache[user_id] = updated
+            self._gemini_history[user_id] = updated
 
             return reply
         except Exception as e:
-            logger.error(f"Chat error: {e}", exc_info=True)
-            return f"ËÖ¶Ë¢ãÂâõÊâçÊâìÁµê‰∫Ü üòµ ÈåØË™§Ôºö{str(e)[:100]}"
+            err_msg = str(e)
+            logger.error(f"Gemini Chat error: {err_msg}", exc_info=True)
+            if "not found" in err_msg.lower() or "404" in err_msg:
+                return (
+                    f"?òµ Ê®°Â????Â§±Ê?ÔºöÊâæ‰∏çÂà∞Ê®°Â? `{settings.GEMINI_MODEL}`ÔºÅ\n"
+                    f"Âª∫Ë≠∞??.env Â∞?GEMINI_MODEL Ë®≠Â???gemini-2.5-flash ??gemini-2.0-flash??
+                )
+            return f"?¶Ë??õÊ??ìÁ?‰∫??òµ ?ØË™§Ôºö{err_msg[:120]}"
 
-    async def analyze_image(self, user_id: str, image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
-        """ÂúñÁâáËæ®Ë≠òÔºàÁôºÁ•®„ÄÅË¨õÁæ©„ÄÅÁôΩÊùø„ÄÅÁæéÈ£üÁ≠âÔºâ"""
-        if not self._is_configured():
-            return "Ë´ãÂÖàÂú® .env Ë®≠ÂÆö GEMINI_API_KEY ÊâçËÉΩËæ®Ë≠òÂúñÁâáÔºÅüì∏"
-
-        client = self._client()
-        prompt = (
-            f"ÊàëÁöÑÊúãÂèãÂÇ≥‰æÜÈÄôÂºµÁÖßÁâá„ÄÇË´ã‰ª•Â•ΩÂèã„Äå{settings.BOT_NAME}„ÄçÁöÑË™ûÊ∞£ÂõûÊáâÔºö\n"
-            "1. ÂëäË®¥ÊúãÂèãÁÖßÁâá‰∫ÆÈªû„ÄÇ\n"
-            "2. Ëã•ÊòØÊî∂Êìö/ÁôºÁ•®ÔºöÊ¢ùÂàóÈáëÈ°çËàáÂìÅÈ†Ö„ÄÇ\n"
-            "3. Ëã•ÊòØË¨õÁæ©/Á≠ÜË®ò/Á®ãÂºèÁ¢ºÔºöËêÉÂèñÊ†∏ÂøÉÈáçÈªû‰∏¶Ëß£Êûê„ÄÇ\n"
-            "4. Ëã•ÊòØÁæéÈ£ü/È¢®ÊôØ/Ëá™ÊãçÔºöÁÜ±ÊÉÖ‰∫íÂãïÔºÅ"
-        )
+    # ?Ä?Ä ?¨Âú∞ Ollama ÂØ¶‰? ?Ä?Ä
+    async def _chat_ollama(self, user_id: str, text: str) -> str:
         try:
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=[
-                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                    types.Part.from_text(text=prompt),
-                ],
-                config=self._config(0.6),
+            history = self._ollama_history.get(user_id, [])
+            messages = [{"role": "system", "content": FRIEND_SYSTEM_INSTRUCTION}] + history + [
+                {"role": "user", "content": text}
+            ]
+
+            async with httpx.AsyncClient(timeout=60.0) as http:
+                res = await http.post(
+                    f"{settings.OLLAMA_HOST.rstrip('/')}/api/chat",
+                    json={
+                        "model": settings.OLLAMA_MODEL,
+                        "messages": messages,
+                        "stream": False,
+                        "options": {"temperature": 0.7}
+                    }
+                )
+                if res.status_code != 200:
+                    return f"?¨Âú∞ Ollama ?ûÊ??ØË™§ (HTTP {res.status_code})Ôºö{res.text[:120]}"
+                
+                data = res.json()
+                reply = data.get("message", {}).get("content", "").strip() or "ÔºàÁ??óÁ??ó‰?Ôºå‰??•È??éÈ∫º?ûÔ?"
+
+                # ?¥Êñ∞Ë®òÊÜ∂
+                updated = history + [
+                    {"role": "user", "content": text},
+                    {"role": "assistant", "content": reply}
+                ]
+                if len(updated) > self.max_history_turns * 2:
+                    updated = updated[-(self.max_history_turns * 2):]
+                self._ollama_history[user_id] = updated
+
+                return reply
+        except httpx.ConnectError:
+            return (
+                f"?°Ê?????∞Êú¨??Ollama ‰º∫Ê???({settings.OLLAMA_HOST}) ??\n"
+                "Ë´ãÁ¢∫Ë™çÊú¨?∞Â∑≤ÂÆâË?‰∏¶Â???Ollama (?á‰ª§Ôºö`ollama serve` ??`ollama run llama3.2`)Ôº?
             )
-            return response.text or "ÊàëÁúãÂÆåÁÖßÁâá‰∫ÜÔºåÊÑüË¶∫ÂæàÊúâË∂£ÔºÅ"
         except Exception as e:
-            logger.error(f"Image error: {e}", exc_info=True)
-            return f"ÁúãÁÖßÁâáÊôÇÁúºÁùõËä±‰∫Ü üòµ ÈåØË™§Ôºö{str(e)[:100]}"
+            logger.error(f"Ollama Chat error: {e}", exc_info=True)
+            return f"?¨Âú∞Ê®°Â??ïÁ??ÇÂá∫???òµ ?ØË™§Ôºö{str(e)[:120]}"
 
-    async def transcribe_audio(self, user_id: str, audio_bytes: bytes, mime_type: str = "audio/m4a") -> str:
-        """Ë™ûÈü≥Ë®äÊÅØËΩâÈÄêÂ≠óÁ®øËàáÊëòË¶Å"""
-        if not self._is_configured():
-            return "Ë´ãÂÖàÂú® .env Ë®≠ÂÆö GEMINI_API_KEY ÊâçËÉΩËôïÁêÜË™ûÈü≥ÔºÅüéôÔ∏è"
+    # ---------------------------------------------------------------
+    # ?ñÁ?Ëæ®Ë?
+    # ---------------------------------------------------------------
+    async def analyze_image(self, user_id: str, image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
+        provider = settings.AI_PROVIDER.lower()
 
-        client = self._client()
         prompt = (
-            f"ÈÄôÊòØÊàëÊúãÂèãÁöÑ LINE Ë™ûÈü≥Ë®äÊÅØ„ÄÇË´ã‰ª•Â•ΩÂèã„Äå{settings.BOT_NAME}„ÄçÁöÑË∫´‰ªΩÔºö\n"
-            "1. „ÄêÈÄêÂ≠óÁ®ø„ÄëÔºöÊ∫ñÁ¢∫Ë®òÈåÑË™™‰∫Ü‰ªÄÈ∫º„ÄÇ\n"
-            "2. „ÄêÈáçÈªûÊëòË¶Å„ÄëÔºö2~3 ÈªûÁ≤æËèØ„ÄÇ\n"
-            "3. „ÄêÈ∫ªÂêâÂõûË¶Ü„ÄëÔºöË¶™ÂàáÊ∫´ÊöñÂú∞ÂõûÊáâ„ÄÇ"
+            f"?ëÁ??ãÂ??≥‰??ôÂºµ?ßÁ??ÇË?‰ª•Â•Ω?ã„Äå{settings.BOT_NAME}?çÁ?Ë™ûÊ∞£?ûÊ?Ôºö\n"
+            "1. ?äË®¥?ãÂ??ßÁ?‰∫ÆÈ??Ç\n"
+            "2. ?•ÊòØ?∂Ê?/?ºÁ•®ÔºöÊ??óÈ?È°çË??ÅÈ??Ç\n"
+            "3. ?•ÊòØË¨õÁæ©/Á≠ÜË?/Á®ãÂ?Á¢ºÔ??ÉÂ??∏Â??çÈ?‰∏¶Ëß£?ê„ÄÇ\n"
+            "4. ?•ÊòØÁæéÈ?/È¢®ÊôØ/?™Ê?ÔºöÁÜ±?Ö‰??ïÔ?"
         )
+
+        # ?Ä?Ä Gemini Ë¶ñË¶∫?ÜÊ? ?Ä?Ä
+        if provider == "gemini":
+            if not self.is_configured():
+                return "Ë´ãÂ???.env Ë®≠Â? GEMINI_API_KEY ?çËÉΩËæ®Ë??ñÁ?ÔºÅ??
+            try:
+                from google import genai
+                from google.genai import types
+
+                client = genai.Client(api_key=settings.GEMINI_API_KEY)
+                response = client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=[
+                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                        types.Part.from_text(text=prompt),
+                    ],
+                    config=types.GenerateContentConfig(
+                        system_instruction=FRIEND_SYSTEM_INSTRUCTION,
+                        temperature=0.6,
+                    ),
+                )
+                return response.text or "?ëÁ?ÂÆåÁÖß?á‰?ÔºåÊ?Ë¶∫Â??âË∂£ÔºÅ‚ú®"
+            except Exception as e:
+                logger.error(f"Image error: {e}", exc_info=True)
+                return f"?ãÁÖß?áÊ??ºÁ??±‰? ?òµ ?ØË™§Ôºö{str(e)[:120]}"
+
+        # ?Ä?Ä ?¨Âú∞ Ollama Ë¶ñË¶∫?ÜÊ? (?Ä?∑Â?Ë¶ñË¶∫?ΩÂ??ÑÊ®°?ãÂ? llava / llama3.2-vision) ?Ä?Ä
+        else:
+            try:
+                img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+                async with httpx.AsyncClient(timeout=60.0) as http:
+                    res = await http.post(
+                        f"{settings.OLLAMA_HOST.rstrip('/')}/api/generate",
+                        json={
+                            "model": settings.OLLAMA_MODEL,
+                            "prompt": prompt,
+                            "images": [img_b64],
+                            "stream": False,
+                        }
+                    )
+                    if res.status_code == 200:
+                        return res.json().get("response", "?ëÁ??éÈÄôÂºµ?ñÁ?‰∫ÜÔ?")
+                    return f"?¨Âú∞Ê®°Â?Ë¶ñË¶∫Ëæ®Ë??Ä?≠È??∑Â?Ë¶ñË¶∫?ΩÂ??ÑÊ®°??(Â¶?llava, llama3.2-vision)?ÇHTTP ?ØË™§Ôºö{res.status_code}"
+            except Exception as e:
+                logger.error(f"Local Image error: {e}", exc_info=True)
+                return f"?¨Âú∞?ñÁ??ÜÊ?Â§±Ê? ?òµ ?ØË™§Ôºö{str(e)[:120]}"
+
+    # ---------------------------------------------------------------
+    # Ë™ûÈü≥Ë®äÊÅØËæ®Ë??áÊ?Ë¶?    # ---------------------------------------------------------------
+    async def transcribe_audio(self, user_id: str, audio_bytes: bytes, mime_type: str = "audio/m4a") -> str:
+        provider = settings.AI_PROVIDER.lower()
+        if provider != "gemini":
+            return "Ë™ûÈü≥Ëæ®Ë??üËÉΩ?ÆÂ?‰∏ªË??ØÊè¥ Gemini Ê®°Â??ÇËã•?Ä‰ΩøÁî®Ë´ãÂú® .env Â∞?AI_PROVIDER ?πÁÇ∫ geminiÔºÅ?ôÔ?"
+
+        if not self.is_configured():
+            return "Ë´ãÂ???.env Ë®≠Â? GEMINI_API_KEY ?çËÉΩ?ïÁ?Ë™ûÈü≥ÔºÅ?ôÔ?"
+
         try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            prompt = (
+                f"?ôÊòØ?ëÊ??ãÁ? LINE Ë™ûÈü≥Ë®äÊÅØ?ÇË?‰ª•Â•Ω?ã„Äå{settings.BOT_NAME}?çÁ?Ë∫´‰ªΩÔºö\n"
+                "1. ?êÈÄêÂ?Á®ø„ÄëÔ?Ê∫ñÁ¢∫Ë®òÈ?Ë™™‰?‰ªÄÈ∫º„ÄÇ\n"
+                "2. ?êÈ?ÈªûÊ?Ë¶Å„ÄëÔ?2~3 ÈªûÁ≤æ?Ø„ÄÇ\n"
+                "3. ?êÈ∫ª?âÂ?Ë¶Ü„ÄëÔ?Ë¶™Â?Ê∫´Ê??∞Â??â„Ä?
+            )
             response = client.models.generate_content(
                 model=settings.GEMINI_MODEL,
                 contents=[
                     types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
                     types.Part.from_text(text=prompt),
                 ],
-                config=self._config(0.5),
+                config=types.GenerateContentConfig(
+                    system_instruction=FRIEND_SYSTEM_INSTRUCTION,
+                    temperature=0.5,
+                ),
             )
-            return response.text or "ÊàëËÅΩÂÆåË™ûÈü≥‰∫ÜÔºå‰∏çÈÅéÊúâÈªûÈõúÈü≥ÔºåË¶Å‰∏çË¶ÅÂÜçÈåÑ‰∏ÄÊ¨°Ôºüüéß"
+            return response.text or "?ëËÅΩÂÆåË??≥‰?Ôºå‰??éÊ?ÈªûÈ??≥Ô?Ë¶Å‰?Ë¶ÅÂ??Ñ‰?Ê¨°Ô??éß"
         except Exception as e:
             logger.error(f"Audio error: {e}", exc_info=True)
-            return f"Ë™ûÈü≥ËôïÁêÜÂ§±Êïó üòµ ÈåØË™§Ôºö{str(e)[:100]}"
+            return f"Ë™ûÈü≥?ïÁ?Â§±Ê? ?òµ ?ØË™§Ôºö{str(e)[:120]}"
 
+    # ---------------------------------------------------------------
+    # Á∂≤Â??áÁ??™Â??üË?
+    # ---------------------------------------------------------------
     async def summarize_url(self, url: str) -> str:
-        """Áà¨ÂèñÁ∂≤È†Å‰∏¶ÊëòË¶Å 3 ÈªûÈáçÈªû"""
         try:
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as http:
-                res = await http.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                res = await http.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
                 res.raise_for_status()
             soup = BeautifulSoup(res.text, "html.parser")
-            for tag in soup(["script", "style", "nav", "footer", "header"]):
+            for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
                 tag.decompose()
-            title = soup.title.string.strip() if soup.title else "ÈÄôÁØáÊñáÁ´†"
-            text_content = " ".join(soup.stripped_strings)[:4000]
+            title = soup.title.string.strip() if soup.title and soup.title.string else "?ôÁ??áÁ?"
+            text_content = " ".join(soup.stripped_strings)[:3500]
 
-            if not self._is_configured():
-                return f"ÊäìÂà∞„Ää{title}„Äã‰∫ÜÔºå‰ΩÜÈúÄË¶Å GEMINI_API_KEY ÊâçËÉΩÂπ´‰Ω†ÊëòË¶ÅÔºÅüìë"
-
-            client = self._client()
             prompt = (
-                f"ÊñáÁ´†Ê®ôÈ°åÔºö„Ää{title}„Äã\nÁ∂≤ÂùÄÔºö{url}\n\nÂÖßÂÆπÁØÄÈåÑÔºö\n{text_content}\n\n"
-                f"Ë´ã‰ª•ÊúãÂèã„Äå{settings.BOT_NAME}„ÄçÁöÑË™ûÊ∞£Êï¥ÁêÜÔºö\n"
-                "1. ‰∏ÄÂè•Ë©±ÁµêË´ñ\n2. 3 ÈªûÂøÖËÆÄÁ≤æËèØ\n3. Á∞°Áü≠ÂøÉÂæóÊàñÂª∫Ë≠∞"
+                f"?áÁ?Ê®ôÈ?Ôºö„Ää{title}?ã\nÁ∂≤Â?Ôºö{url}\n\n?ßÂÆπÁØÄ?ÑÔ?\n{text_content}\n\n"
+                f"Ë´ã‰ª•?ãÂ??å{settings.BOT_NAME}?çÁ?Ë™ûÊ∞£?¥Á?Ôºö\n"
+                "1. ?í° ‰∏Ä?•Ë©±ÁµêË?\n2. ?? 3 ÈªûÂ?ËÆÄÁ≤æËèØ\n3. ?í¨ Á∞°Áü≠ÂøÉÂ??ñÂª∫Ë≠?
             )
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=[types.Part.from_text(text=prompt)],
-                config=self._config(0.5),
-            )
-            return response.text or f"ÊàëÁúãÂÆå„Ää{title}„Äã‰∫ÜÔºÅ"
+
+            # ?ºÂè´?∏Ê???AI ?çÂ??¢Á??òË?
+            if settings.AI_PROVIDER.lower() == "ollama":
+                async with httpx.AsyncClient(timeout=60.0) as http:
+                    res = await http.post(
+                        f"{settings.OLLAMA_HOST.rstrip('/')}/api/generate",
+                        json={
+                            "model": settings.OLLAMA_MODEL,
+                            "prompt": prompt,
+                            "system": FRIEND_SYSTEM_INSTRUCTION,
+                            "stream": False,
+                        }
+                    )
+                    if res.status_code == 200:
+                        return res.json().get("response", f"?¥Á?ÂÆå„Ää{title}?ãÂ?Ôº?)
+                    return f"?¥Á?Â§±Ê?ÔºåOllama ?ûÊ??Ä?ãÔ?{res.status_code}"
+            else:
+                if not self.is_configured():
+                    return f"?ìÂà∞?ä{title}?ã‰?Ôºå‰?Ë´ãË®≠ÂÆ?GEMINI_API_KEY ?çËÉΩÂπ´‰??òË?ÔºÅ??
+                from google import genai
+                from google.genai import types
+
+                client = genai.Client(api_key=settings.GEMINI_API_KEY)
+                response = client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=[types.Part.from_text(text=prompt)],
+                    config=types.GenerateContentConfig(
+                        system_instruction=FRIEND_SYSTEM_INSTRUCTION,
+                        temperature=0.5,
+                    ),
+                )
+                return response.text or f"?ëÁ?ÂÆå„Ää{title}?ã‰?Ôº?
         except Exception as e:
             logger.error(f"URL error: {e}", exc_info=True)
-            return f"ËÆÄÂèñÁ∂≤È†ÅÂ§±Êïó üò¢ ÈåØË™§Ôºö{str(e)[:100]}"
+            return f"ËÆÄ?ñÁ∂≤?ÅÂ§±???ò¢ ?ØË™§Ôºö{str(e)[:120]}"
 
 
-# ÂÖ®Âüü AI ÊúçÂãôÂØ¶‰æã
+# Âª∫Á??®Â? AI ?çÂ?ÂØ¶‰?
 ai = AIService()
 
 # ===================================================================
-# 6. LINE ‰∫ã‰ª∂ËôïÁêÜ
+# 5. LINE ‰∫ã‰ª∂?ïÁ?Ê®°Á?
 # ===================================================================
-def quick_reply() -> QuickReply:
-    """ËÅäÂ§©ÂÆ§Âø´Êç∑ÊåâÈàï"""
-    return QuickReply(items=[
-        QuickReplyItem(action=MessageAction(label="üí¨ ËÅäËÅä‰ªäÂ§©", text="‰ªäÂ§©ÈÅéÂæóÂ•ΩÂÖÖÂØ¶Ôºå‰Ω†Âú®ÂππÂòõÂë¢Ôºü")),
-        QuickReplyItem(action=MessageAction(label="üç± ‰ªäÂ§©ÂêÉ‰ªÄÈ∫º", text="Âπ´ÊàëÊÉ≥ÊÉ≥ÂçàÈ§ê/ÊôöÈ§êÂêÉ‰ªÄÈ∫ºÔºü")),
-        QuickReplyItem(action=MessageAction(label="üí° ÂÜ∑Áü•Ë≠ò", text="Ë∑üÊàëÂàÜ‰∫´‰∏ÄÂÄãÊúâË∂£ÁöÑÂÜ∑Áü•Ë≠òÔºÅ")),
-        QuickReplyItem(action=MessageAction(label="üîÑ ÈáçË®≠Â∞çË©±", text="ÈáçË®≠Â∞çË©±")),
-    ])
+def get_quick_reply():
+    try:
+        from linebot.v3.messaging import QuickReply, QuickReplyItem, MessageAction
+        return QuickReply(items=[
+            QuickReplyItem(action=MessageAction(label="?í¨ ?äË?‰ªäÂ§©", text="‰ªäÂ§©?éÂ?Â•ΩÂ?ÂØ¶Ô?‰Ω†Âú®ÂππÂ??¢Ô?")),
+            QuickReplyItem(action=MessageAction(label="?ç± ‰ªäÂ§©?É‰?È∫?, text="Âπ´Ê??≥ÊÉ≥?àÈ?/?öÈ??É‰?È∫ºÔ?")),
+            QuickReplyItem(action=MessageAction(label="?í° ?∑Áü•Ë≠?, text="Ë∑üÊ??Ü‰∫´‰∏Ä?ãÊ?Ë∂???∑Áü•Ë≠òÔ?")),
+            QuickReplyItem(action=MessageAction(label="?? ?çË®≠Â∞çË©±", text="?çË®≠Â∞çË©±")),
+        ])
+    except ImportError:
+        return None
 
 
-async def handle_line_event(event: Event):
-    """ÂàÜÊ¥æËôïÁêÜ LINE ‰∫ã‰ª∂"""
+async def handle_line_event(event: Any):
+    """?ïÁ? LINE Webhook ‰∫ã‰ª∂"""
+    from linebot.v3.messaging import (
+        AsyncApiClient,
+        AsyncMessagingApi,
+        AsyncMessagingApiBlob,
+        Configuration,
+        ReplyMessageRequest,
+        TextMessage,
+        ShowLoadingAnimationRequest,
+    )
+    from linebot.v3.webhooks import (
+        MessageEvent,
+        TextMessageContent,
+        ImageMessageContent,
+        AudioMessageContent,
+        FollowEvent,
+    )
+
     line_config = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
 
     async with AsyncApiClient(line_config) as api_client:
         line_api = AsyncMessagingApi(api_client)
         blob_api = AsyncMessagingApiBlob(api_client)
 
-        # Âä†Â•ΩÂèãÊ≠°ËøéË®äÊÅØ
-        if isinstance(event, FollowEvent):
+        # ?†Â•Ω?ãÊ≠°ËøéË???        if isinstance(event, FollowEvent):
             welcome = (
-                f"ÂìàÂõâÔºÅÊàëÊòØ„Äå{settings.BOT_NAME}„Äç‚ú®\n"
-                "‰Ω†ÁöÑÂ∞àÂ±¨ AI ÊëØÂèãÔºÅÂæàÈñãÂøÉËÉΩÈÅáË¶ã‰Ω†ÔΩûüéâ\n\n"
-                "‰Ω†ÂèØ‰ª•Èö®ÊôÇË∑üÊàëÔºö\n"
-                "üí¨ ËÅäÂ§©„ÄÅË®éË´ñÊàñË´ãÊàëËß£Á≠îÂïèÈ°å\n"
-                "üì∏ ÂÇ≥ÁÖßÁâáÂπ´‰Ω†Ëæ®Ë≠òÊï¥ÁêÜ\n"
-                "üéôÔ∏è ÂÇ≥Ë™ûÈü≥Âπ´‰Ω†ËΩâÈÄêÂ≠óÁ®øËàáÊëòË¶Å\n"
-                "üîó ‰∏üÁ∂≤ÂùÄÂπ´‰Ω†Âø´ÈÄüÊäìÈáçÈªû\n\n"
-                "Âø´‰æÜË∑üÊàëË™™Á¨¨‰∏ÄÂè•Ë©±ÂêßÔºÅüòä"
+                f"?àÂ?ÔºÅÊ??Ø„Äå{settings.BOT_NAME}?ç‚ú®\n"
+                "‰Ω†Á?Â∞àÂ±¨ AI ?ØÂ?ÔºÅÂ??ãÂ??ΩÈ?Ë¶ã‰?ÔΩû?â\n\n"
+                "‰Ω†ÂèØ‰ª•Èö®?ÇË??ëÔ?\n"
+                "?í¨ ?äÂ§©?ÅË?Ë´ñÊ?Ë´ãÊ?Ëß???èÈ?\n"
+                "?ì∏ ?≥ÁÖß?áÂπ´‰Ω†Ëæ®Ë≠òÊï¥?Ü\n"
+                "??Ô∏??≥Ë??≥Âπ´‰Ω†Ë??êÂ?Á®øË??òË?\n"
+                "?? ‰∏üÁ∂≤?ÄÂπ´‰?Âø´ÈÄüÊ??çÈ?\n\n"
+                "Âø´‰?Ë∑üÊ?Ë™™Á¨¨‰∏Ä?•Ë©±?ßÔ???"
             )
             await line_api.reply_message(ReplyMessageRequest(
                 reply_token=event.reply_token,
-                messages=[TextMessage(text=welcome, quick_reply=quick_reply())]
+                messages=[TextMessage(text=welcome, quick_reply=get_quick_reply())]
             ))
             return
 
@@ -301,45 +446,46 @@ async def handle_line_event(event: Event):
         user_id = getattr(event.source, "user_id", None) or "default_user"
         reply_token = event.reply_token
 
-        # ‚îÄ‚îÄ ÊñáÂ≠óË®äÊÅØ ‚îÄ‚îÄ
+        # ?áÂ?Ë®äÊÅØ
         if isinstance(event.message, TextMessageContent):
             await _safe_loading(line_api, user_id)
             reply = await ai.chat(user_id, event.message.text)
             await line_api.reply_message(ReplyMessageRequest(
                 reply_token=reply_token,
-                messages=[TextMessage(text=reply, quick_reply=quick_reply())]
+                messages=[TextMessage(text=reply, quick_reply=get_quick_reply())]
             ))
 
-        # ‚îÄ‚îÄ ÂúñÁâáË®äÊÅØ ‚îÄ‚îÄ
+        # ?ñÁ?Ë®äÊÅØ
         elif isinstance(event.message, ImageMessageContent):
             await _safe_loading(line_api, user_id, 30)
             try:
                 img_bytes = await blob_api.get_message_content(event.message.id)
                 reply = await ai.analyze_image(user_id, bytes(img_bytes))
             except Exception as e:
-                reply = f"ÊäìÂèñÁÖßÁâáÂ§±Êïó ü•∫ ÈåØË™§Ôºö{str(e)[:100]}"
+                reply = f"?ìÂ??ßÁ?Â§±Ê? ?•∫ ?ØË™§Ôºö{str(e)[:100]}"
             await line_api.reply_message(ReplyMessageRequest(
                 reply_token=reply_token,
-                messages=[TextMessage(text=reply, quick_reply=quick_reply())]
+                messages=[TextMessage(text=reply, quick_reply=get_quick_reply())]
             ))
 
-        # ‚îÄ‚îÄ Ë™ûÈü≥Ë®äÊÅØ ‚îÄ‚îÄ
+        # Ë™ûÈü≥Ë®äÊÅØ
         elif isinstance(event.message, AudioMessageContent):
             await _safe_loading(line_api, user_id, 30)
             try:
                 audio_bytes = await blob_api.get_message_content(event.message.id)
                 reply = await ai.transcribe_audio(user_id, bytes(audio_bytes))
             except Exception as e:
-                reply = f"Ë™ûÈü≥Êé•Êî∂Â§±Êïó ü•∫ ÈåØË™§Ôºö{str(e)[:100]}"
+                reply = f"Ë™ûÈü≥?•Êî∂Â§±Ê? ?•∫ ?ØË™§Ôºö{str(e)[:100]}"
             await line_api.reply_message(ReplyMessageRequest(
                 reply_token=reply_token,
-                messages=[TextMessage(text=reply, quick_reply=quick_reply())]
+                messages=[TextMessage(text=reply, quick_reply=get_quick_reply())]
             ))
 
 
-async def _safe_loading(api: AsyncMessagingApi, chat_id: str, seconds: int = 20):
-    """È°ØÁ§∫ LINE ÊâìÂ≠ó‰∏≠ÂãïÁï´ÔºàÁæ§ÁµÑ‰∏çÊîØÊè¥ÔºåÂ§±ÊïóÊôÇÈùúÈªòÂøΩÁï•Ôºâ"""
+async def _safe_loading(api: Any, chat_id: str, seconds: int = 20):
+    """È°ØÁ§∫ LINE ÂÆòÊñπ?ìÂ?ËºâÂÖ•‰∏≠Â???""
     try:
+        from linebot.v3.messaging import ShowLoadingAnimationRequest
         await api.show_loading_animation(
             ShowLoadingAnimationRequest(chat_id=chat_id, loading_seconds=seconds)
         )
@@ -348,63 +494,355 @@ async def _safe_loading(api: AsyncMessagingApi, chat_id: str, seconds: int = 20)
 
 
 # ===================================================================
-# 7. FastAPI ÊáâÁî®Á®ãÂºè
-# ===================================================================
+# 6. FastAPI ‰º∫Ê??®Ë??ßÂª∫?¨Âú∞Á´?Web ?äÂ§©ÂÆ?# ===================================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("=" * 50)
-    logger.info(f"‚ú® LINE AI Â•ΩÂèã„Äå{settings.BOT_NAME}„ÄçÂïüÂãïÔºÅ")
-    logger.info(f"ü§ñ Ê®°ÂûãÔºö{settings.GEMINI_MODEL}")
-    logger.info(f"üîî WebhookÔºöhttp://{settings.HOST}:{settings.PORT}/callback")
-    logger.info("=" * 50)
+    logger.info("=" * 65)
+    logger.info(f"??LINE AI Â•ΩÂ??å{settings.BOT_NAME}?çÊ??ôÂ∑≤?üÂ?Ôº?)
+    logger.info(f"?? ?ÆÂ? AI ÂºïÊ?Ôºö{settings.AI_PROVIDER.upper()}")
+    if settings.AI_PROVIDER.lower() == "gemini":
+        logger.info(f"?ì¶ Gemini Ê®°Â?Ôºö{settings.GEMINI_MODEL}")
+    else:
+        logger.info(f"?íª ?¨Âú∞ Ollama Ê®°Â?Ôºö{settings.OLLAMA_MODEL} ({settings.OLLAMA_HOST})")
+    
+    logger.info(f"?? ?¨Âú∞ Web Ê∏¨Ë©¶?äÂ§©ÂÆ§Ô?http://localhost:{settings.PORT}")
+    logger.info(f"?? LINE Webhook ?•Êî∂ÈªûÔ?http://localhost:{settings.PORT}/callback")
+    logger.info("-" * 65)
+    logger.info("?í° ?êÁ§∫ÔºöËã•Ë¶ÅÂú® LINE ‰∏ä‰Ωø?®Ô?Ë´ãÈÄèÈ? ngrok ?ãÂ??ßÈ?‰∏¶Â°´??Webhook URLÔº?)
+    logger.info(f"   ?á‰ª§Ôºöngrok http {settings.PORT}")
+    logger.info("=" * 65)
     yield
-    logger.info(f"üëã„Äå{settings.BOT_NAME}„Äç‰∏ãÁ∑ö")
+    logger.info(f"???å{settings.BOT_NAME}?çÂ∑≤‰∏ãÁ?")
 
 
 app = FastAPI(
     title=f"LINE AI Friend - {settings.BOT_NAME}",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan
 )
 
 
-def _get_parser() -> WebhookParser:
-    secret = settings.LINE_CHANNEL_SECRET
-    if not secret or secret == "your_line_channel_secret_here":
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="LINE_CHANNEL_SECRET Â∞öÊú™Ë®≠ÂÆö"
-        )
-    return WebhookParser(secret)
+# ?Ä?Ä ?ßÂª∫?¨Âú∞ Web ?äÂ§©ÂÆ?HTML ‰ªãÈù¢ ?Ä?Ä
+WEB_CHAT_HTML = """
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI ?®Ë∫´Â•ΩÂ??åÂ??â„Ä? ?¨Âú∞Ê∏¨Ë©¶?ßÂà∂??/title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      background: linear-gradient(135deg, #f5f7fb 0%, #e8edf5 100%);
+      color: #333;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 12px;
+    }
+    .chat-container {
+      width: 100%;
+      max-width: 820px;
+      height: 94vh;
+      background: #ffffff;
+      border-radius: 20px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.08);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid #eef2f6;
+    }
+    .header {
+      background: #06c755;
+      color: white;
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header-info h1 { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .header-info p { font-size: 0.85rem; opacity: 0.9; margin-top: 4px; }
+    .status-badge {
+      font-size: 0.78rem;
+      background: rgba(255,255,255,0.25);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-weight: 500;
+      backdrop-filter: blur(4px);
+    }
+    .chat-box {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: #fafbfe;
+    }
+    .msg {
+      max-width: 82%;
+      padding: 12px 18px;
+      border-radius: 16px;
+      line-height: 1.6;
+      font-size: 0.95rem;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .msg.bot {
+      align-self: flex-start;
+      background: #ffffff;
+      border: 1px solid #e9ecef;
+      color: #2b2f38;
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: #06c755;
+      color: white;
+      border-bottom-right-radius: 4px;
+      box-shadow: 0 2px 6px rgba(6,199,85,0.25);
+    }
+    .msg-time {
+      font-size: 0.72rem;
+      margin-top: 4px;
+      opacity: 0.7;
+      text-align: right;
+    }
+    .quick-actions {
+      display: flex;
+      gap: 8px;
+      padding: 8px 16px;
+      background: #f1f3f7;
+      overflow-x: auto;
+      white-space: nowrap;
+      border-top: 1px solid #e8ecf1;
+    }
+    .quick-btn {
+      background: white;
+      border: 1px solid #dce2ea;
+      padding: 6px 12px;
+      border-radius: 16px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      color: #495057;
+      transition: all 0.2s;
+    }
+    .quick-btn:hover { background: #e9f8ee; border-color: #06c755; color: #06c755; }
+    .input-area {
+      padding: 14px 18px;
+      background: #ffffff;
+      border-top: 1px solid #eef2f6;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .input-area textarea {
+      flex: 1;
+      height: 48px;
+      border: 1px solid #dce2ea;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      resize: none;
+      outline: none;
+      transition: border 0.2s;
+    }
+    .input-area textarea:focus { border-color: #06c755; }
+    .send-btn {
+      background: #06c755;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 0 20px;
+      height: 48px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .send-btn:hover { background: #05b34c; }
+    .send-btn:disabled { background: #b0e5c5; cursor: not-allowed; }
+    .loading-dot { display: inline-block; animation: wave 1.2s infinite ease-in-out; }
+    @keyframes wave { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="header">
+      <div class="header-info">
+        <h1>??AI Â•ΩÂ??åÂ??â„Ä?span style="font-size: 0.8rem; font-weight: normal; background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 10px;">?¨Âú∞Ê∏¨Ë©¶??/span></h1>
+        <p>ÂºïÊ?Ôº?span id="providerInfo">ËºâÂÖ•‰∏?..</span> | Ê®°Â?Ôº?span id="modelInfo">...</span></p>
+      </div>
+      <div class="status-badge" id="statusBadge">Ê™¢Ê∏¨???‰∏?..</div>
+    </div>
+
+    <div class="chat-box" id="chatBox">
+      <div class="msg bot">
+        ?àÂ?ÔºÅÊ??Ø„ÄåÂ??â„Äç‚ú® ‰Ω†Á?Â∞àÂ±¨ AI ?ØÂ?Ôº?br>
+        ‰Ω†Âú®?¨Âú∞Á´ØÈö®?ÇÂèØ‰ª•Ë??ëË??äÂ§©?Å‰?Á∂≤Â?ËÆìÊ??üË?ÔºåÊ??ØÈ??ä‰??πÂø´?üÊ??ïË©¶Ë©¶Á??îÔ???
+        <div class="msg-time">Á≥ªÁµ±?êË®≠</div>
+      </div>
+    </div>
+
+    <div class="quick-actions">
+      <button class="quick-btn" onclick="sendQuick('‰ªäÂ§©?éÂ?Â•ΩÂ?ÂØ¶Ô?‰Ω†Âú®ÂππÂ??¢Ô?')">?í¨ ?äË?‰ªäÂ§©</button>
+      <button class="quick-btn" onclick="sendQuick('Âπ´Ê??≥ÊÉ≥?àÈ?/?öÈ??É‰?È∫ºÔ?')">?ç± ‰ªäÂ§©?É‰?È∫?/button>
+      <button class="quick-btn" onclick="sendQuick('Ë∑üÊ??Ü‰∫´‰∏Ä?ãÊ?Ë∂???∑Áü•Ë≠òÔ?')">?í° ?âË∂£?∑Áü•Ë≠?/button>
+      <button class="quick-btn" onclick="sendQuick('https://zh.wikipedia.org/wiki/‰∫∫Â∑•?∫ÊÖß')">?? Ê∏¨Ë©¶Á∂≠Âü∫?æÁ??òË?</button>
+      <button class="quick-btn" onclick="sendQuick('?çË®≠Â∞çË©±')">?? ?çË®≠Â∞çË©±Ë®òÊÜ∂</button>
+    </div>
+
+    <div class="input-area">
+      <textarea id="userInput" placeholder="Ëº∏ÂÖ•Ë®äÊÅØ... (Enter ?ÅÂá∫ÔºåShift+Enter ?õË?)" onkeydown="handleKey(event)"></textarea>
+      <button class="send-btn" id="sendBtn" onclick="sendMessage()">?ÅÂá∫</button>
+    </div>
+  </div>
+
+  <script>
+    const chatBox = document.getElementById('chatBox');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const statusBadge = document.getElementById('statusBadge');
+    const providerInfo = document.getElementById('providerInfo');
+    const modelInfo = document.getElementById('modelInfo');
+
+    async function checkHealth() {
+      try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        providerInfo.textContent = data.provider.toUpperCase();
+        modelInfo.textContent = data.model;
+        if (data.status === 'healthy') {
+          statusBadge.textContent = '?ü¢ ?çÂ?Â∞±Á?';
+          statusBadge.style.background = 'rgba(255,255,255,0.3)';
+        } else {
+          statusBadge.textContent = '?ü° ?™Ë®≠ÂÆöÂ???;
+        }
+      } catch (e) {
+        statusBadge.textContent = '?î¥ ????∞Â∏∏';
+      }
+    }
+    checkHealth();
+
+    function appendMessage(text, role) {
+      const msg = document.createElement('div');
+      msg.className = `msg ${role}`;
+      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      msg.innerHTML = `${text}<div class="msg-time">${now}</div>`;
+      chatBox.appendChild(msg);
+      chatBox.scrollTop = chatBox.scrollHeight;
+      return msg;
+    }
+
+    async function sendMessage() {
+      const text = userInput.value.trim();
+      if (!text) return;
+
+      appendMessage(text, 'user');
+      userInput.value = '';
+      sendBtn.disabled = true;
+
+      const loadingMsg = appendMessage('Â∞èÂ?Ê≠?ú®?ùËÄÉ‰∏≠... ?í≠', 'bot');
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, user_id: 'web_tester' })
+        });
+        const data = await res.json();
+        loadingMsg.innerHTML = `${data.reply}<div class="msg-time">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
+      } catch (err) {
+        loadingMsg.innerHTML = `?†Ô? ????ØË™§Ôº?{err.message}<div class="msg-time">?ØË™§</div>`;
+      } finally {
+        sendBtn.disabled = false;
+        userInput.focus();
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+    }
+
+    function sendQuick(txt) {
+      userInput.value = txt;
+      sendMessage();
+    }
+
+    function handleKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    }
+  </script>
+</body>
+</html>
+"""
 
 
-@app.get("/", response_class=PlainTextResponse)
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    return f"‚ú® LINE AI Â•ΩÂèã„Äå{settings.BOT_NAME}„ÄçÈÅã‰Ωú‰∏≠ÔºÅWebhook ‚Üí /callback"
+    """?¨Âú∞Á´ØÊ??ãÁÄèË¶Ω?®Ê??¥Êé•?àÁèæ Web Ê∏¨Ë©¶?äÂ§©ÂÆ?""
+    return HTMLResponse(content=WEB_CHAT_HTML)
+
+
+# ?Ä?Ä ?¨Âú∞Ê∏¨Ë©¶ API ?Ä?Ä
+class LocalChatRequest(BaseModel):
+    message: str
+    user_id: Optional[str] = "web_user"
+
+
+@app.post("/api/chat")
+async def local_chat_api(req: LocalChatRequest):
+    """‰æõÊú¨??Web Ê∏¨Ë©¶?ÅÈù¢?áÈ??ºËÄÖÈô§?ØÁõ¥?•Ë™ø?®Á??äÂ§©Á´ØÈ?"""
+    reply = await ai.chat(user_id=req.user_id, message=req.message)
+    return {"reply": reply, "user_id": req.user_id, "provider": settings.AI_PROVIDER}
 
 
 @app.get("/health")
 async def health():
+    """?çÂ??•Â∫∑Ê™¢Êü•?áÁ??ãË®∫??""
+    provider = settings.AI_PROVIDER.lower()
+    is_gemini = provider == "gemini"
+    is_ollama = provider == "ollama"
+
     return {
         "status": "healthy",
         "bot": settings.BOT_NAME,
-        "model": settings.GEMINI_MODEL,
-        "line_secret": bool(settings.LINE_CHANNEL_SECRET and settings.LINE_CHANNEL_SECRET != "your_line_channel_secret_here"),
-        "line_token": bool(settings.LINE_CHANNEL_ACCESS_TOKEN and settings.LINE_CHANNEL_ACCESS_TOKEN != "your_line_channel_access_token_here"),
-        "gemini_key": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here"),
+        "provider": settings.AI_PROVIDER,
+        "model": settings.GEMINI_MODEL if is_gemini else settings.OLLAMA_MODEL,
+        "gemini_key_set": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here"),
+        "line_secret_set": bool(settings.LINE_CHANNEL_SECRET and settings.LINE_CHANNEL_SECRET != "your_line_channel_secret_here"),
+        "line_token_set": bool(settings.LINE_CHANNEL_ACCESS_TOKEN and settings.LINE_CHANNEL_ACCESS_TOKEN != "your_line_channel_access_token_here"),
     }
 
 
+# ?Ä?Ä LINE Webhook ?Ä?Ä
 @app.post("/callback")
 async def callback(
     request: Request,
     x_line_signature: str = Header(None, alias="X-Line-Signature")
 ):
+    """?ïÁ?‰æÜËá™ LINE ÂÆòÊñπ‰º∫Ê??®Á? Webhook Ë´ãÊ?"""
+    if not settings.LINE_CHANNEL_SECRET or settings.LINE_CHANNEL_SECRET == "your_line_channel_secret_here":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="LINE_CHANNEL_SECRET Â∞öÊú™Ë®≠Â?ÔºåË???.env ‰∏≠Â°´ÂØ´Ô?"
+        )
+
     if not x_line_signature:
-        raise HTTPException(status_code=400, detail="Missing X-Line-Signature")
+        raise HTTPException(status_code=400, detail="Missing X-Line-Signature header")
 
     body = (await request.body()).decode("utf-8")
-    parser = _get_parser()
+
+    from linebot.v3 import WebhookParser
+    from linebot.v3.exceptions import InvalidSignatureError
+
+    parser = WebhookParser(settings.LINE_CHANNEL_SECRET)
 
     try:
         events = parser.parse(body, x_line_signature)
@@ -423,8 +861,52 @@ async def callback(
 
 
 # ===================================================================
-# 8. Áõ¥Êé•Âü∑Ë°åÂÖ•Âè£
+# 7. ?¨Âú∞ÁµÇÁ´ØÊ©?(CLI) ‰∫íÂ?Ê®°Â?
+# ===================================================================
+async def run_cli_mode():
+    """?®Á?Á´ØÊ?‰∏≠Áõ¥?•Ë?Â∞èÂ?‰∫íÂ?Ôºå‰??Ä?∂Ë®≠‰ªª‰? Web ‰º∫Ê??®Ê? LINE Â∏≥Ë?"""
+    print("=" * 65)
+    print(f"??Ê≠°Ë??≤ÂÖ•?ê{settings.BOT_NAME}?ëÊú¨?∞Á?Á´ØÊ?Â∞çË©±Ê®°Â?Ôº?)
+    print(f"?? ?ÆÂ? AI ÂºïÊ?Ôºö{settings.AI_PROVIDER.upper()}")
+    model_name = settings.GEMINI_MODEL if settings.AI_PROVIDER.lower() == "gemini" else settings.OLLAMA_MODEL
+    print(f"?ì¶ Ê®°Â??çÁ®±Ôºö{model_name}")
+    print("-" * 65)
+    print("?í° ?πÊ??á‰ª§Ôº?)
+    print("   - Ëº∏ÂÖ• `/reset` ??`?çË®≠Â∞çË©±` Ê∏ÖÁ©∫Ë®òÊÜ∂")
+    print("   - ?¥Êé•Ë≤º‰?Á∂≤Â??™Â??üÊ? 3 ÈªûÈÄüË??òË?")
+    print("   - Ëº∏ÂÖ• `/exit` ??`exit` ?¢È?ÁµÇÁ´ØÊ©üÊ®°Âº?)
+    print("=" * 65 + "\n")
+
+    user_id = "cli_tester"
+    while True:
+        try:
+            user_input = input("‰Ω?> ").strip()
+            if not user_input:
+                continue
+
+            if user_input.lower() in ["/exit", "exit", "quit", ":q"]:
+                print(f"\n{settings.BOT_NAME} > ?∞Êé∞?âÔ??âÁ©∫?ç‰??æÊ??äÂ§©ÔºÅ?ã‚ú®")
+                break
+
+            print(f"{settings.BOT_NAME} Ê≠?ú®?ùËÄÉ‰∏≠... ?í≠")
+            reply = await ai.chat(user_id, user_input)
+            print(f"\n{settings.BOT_NAME} >\n{reply}\n")
+            print("-" * 50)
+        except (KeyboardInterrupt, EOFError):
+            print(f"\n\n{settings.BOT_NAME} > ?∞Êé∞?âÔ???")
+            break
+        except Exception as e:
+            print(f"\n?†Ô? ?ºÁ??ØË™§Ôºö{e}\n")
+
+
+# ===================================================================
+# 8. Á®ãÂ??¥Êé•?∑Ë??•Âè£
 # ===================================================================
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("bot:app", host=settings.HOST, port=settings.PORT, reload=True)
+    import asyncio
+
+    # ?•ÂÇ≥??--cli ?ÉÊï∏ÔºåÁõ¥?•ÈÄ≤ÂÖ•ÁµÇÁ´ØÊ©üÂ?Ë©?    if "--cli" in sys.argv:
+        asyncio.run(run_cli_mode())
+    else:
+        import uvicorn
+        uvicorn.run("bot:app", host=settings.HOST, port=settings.PORT, reload=True)
