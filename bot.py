@@ -1,4 +1,4 @@
-# LINE AI 隨身好友「小光」- 單一檔案完整版 (支援本地端測試與離線模式)
+# LINE AI 隨身好友「小光」- 單一檔案完整版 (預設本地端 Ollama 離線模式)
 # ===================================================================
 # 功能：
 #   - 文字多輪對話（具備上下文記憶）
@@ -7,16 +7,19 @@
 #   - 網址文章速讀（3 點精華懶人包）
 #   - 內建本地端測試網頁（開啟瀏覽器即可直接聊天測試，免等 LINE Webhook）
 #   - 內建本地端 CLI 終端機對話模式（直接在命令行打字交談）
-#   - 支援本地離線大模型 (Ollama) 與 Google Gemini 雙模式
+#   - 支援本地離線大模型 (Ollama) 與 Google Gemini 雙模式（預設：Ollama 本地端）
 #
 # 安裝依賴套件：
 #   pip install fastapi uvicorn[standard] line-bot-sdk>=3.12.0 google-genai python-dotenv pydantic-settings httpx beautifulsoup4
 #
 # 啟動方式：
+#   0. 確保本地 Ollama 已啟動並下載模型：
+#      ollama run llama3.2
+#      (若要測試圖片辨識，請另外下載：ollama pull llama3.2-vision)
+#
 #   1. 啟動伺服器 (包含本地 Web 測試台與 LINE Webhook)：
 #      python bot.py
-#      (或 uvicorn bot:app --host 0.0.0.0 --port 8000 --reload)
-#      啟動後可直接在瀏覽器打開 http://localhost:8000 直接打字測試對話！
+#      (啟動後直接打開瀏覽器 http://localhost:8000 即可聊天！)
 #
 #   2. 本地端終端機直接聊天 (免開網頁、免 Webhook)：
 #      python bot.py --cli
@@ -49,20 +52,19 @@ load_dotenv()
 # 1. 設定區（自動讀取 .env，亦可直接使用預設值）
 # ===================================================================
 class Settings(BaseSettings):
-    # AI 來源：可選 'gemini' (Google 雲端 API) 或 'ollama' (純本地端離線大模型)
-    AI_PROVIDER: str = "gemini"
-
-    # [Gemini 設定]
-    GEMINI_API_KEY: str = ""
-    # 注意：Google 官方現行模型為 gemini-2.5-flash, gemini-2.0-flash, gemini-1.5-flash
-    # 原版寫 gemini-3.5-flash 官方並不存在，會報 404 錯誤導致無法回答，此處已修正
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    # AI 來源：已預設為 'ollama' (純本地離線模型)；亦可隨時切換為 'gemini'
+    AI_PROVIDER: str = "ollama"
 
     # [Ollama 本地離線模型設定]
     OLLAMA_HOST: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3.2"
+    OLLAMA_MODEL: str = "llama3.2"                     # 文字對話模型
+    OLLAMA_VISION_MODEL: str = "llama3.2-vision"        # 圖片辨識模型 (例如: llama3.2-vision 或 llava)
 
-    # [LINE Bot 設定]
+    # [Gemini 設定]（若切換回 gemini 時使用）
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
+    # [LINE Bot 設定]（正式接 LINE 時填入）
     LINE_CHANNEL_SECRET: str = ""
     LINE_CHANNEL_ACCESS_TOKEN: str = ""
 
@@ -95,13 +97,13 @@ FRIEND_SYSTEM_INSTRUCTION = f"""你是使用者的專屬 AI 摯友「{settings.B
 你的特點與風格：
 1. 像一個溫暖、真誠、富有幽默感的好朋友，懂傾聽、會關心對方的日常生活與心情。
 2. 說話語氣自然親切（台灣口吻、正體中文），適度使用日常語助詞（例如：啦、呀、哈哈、耶、喔、讚）與貼切的 Emoji 😊✨，但絕不過度油膩或機械化。
-3. 知識豐富、頭腦清晰。當朋友遇到課業、程式、生活疑問，或者需要你幫忙分析照片、聽語音、做摘要時，總能迅速給出條理分明、實用又貼心的建議。
-4. 當朋友傳送圖片或語音時，以朋友的視角自然回應。
+3. 知識豐富、頭腦清晰。當朋友遇到課業、程式、生活疑問，或者需要你幫忙分析照片、做摘要時，總能迅速給出條理分明、實用又貼心的建議。
+4. 當朋友傳送圖片時，以朋友的視角自然回應。
 5. 回覆長度適中，排版清晰易讀。
 """
 
 # ===================================================================
-# 4. AI 好友服務（支援 Gemini 與 本地端 Ollama）
+# 4. AI 好友服務（支援 本地端 Ollama 與 Gemini）
 # ===================================================================
 class AIService:
     def __init__(self):
@@ -136,12 +138,57 @@ class AIService:
             return await self._chat_ollama(user_id, text)
         return await self._chat_gemini(user_id, text)
 
+    async def _chat_ollama(self, user_id: str, text: str) -> str:
+        """純本地端離線大模型 (Ollama) 對話"""
+        try:
+            history = self._ollama_history.get(user_id, [])
+            messages = [{"role": "system", "content": FRIEND_SYSTEM_INSTRUCTION}] + history + [
+                {"role": "user", "content": text}
+            ]
+
+            async with httpx.AsyncClient(timeout=60.0) as http:
+                res = await http.post(
+                    f"{settings.OLLAMA_HOST.rstrip('/')}/api/chat",
+                    json={
+                        "model": settings.OLLAMA_MODEL,
+                        "messages": messages,
+                        "stream": False,
+                        "options": {"temperature": 0.7}
+                    }
+                )
+                if res.status_code != 200:
+                    return (
+                        f"本地 Ollama 回應錯誤 (HTTP {res.status_code})！\n"
+                        f"請確認本地是否已下載該模型：`ollama pull {settings.OLLAMA_MODEL}`"
+                    )
+
+                data = res.json()
+                reply = data.get("message", {}).get("content", "").strip() or "（笑著看著你，不知道怎麼回）"
+
+                updated = history + [
+                    {"role": "user", "content": text},
+                    {"role": "assistant", "content": reply}
+                ]
+                if len(updated) > self.max_history_turns * 2:
+                    updated = updated[-(self.max_history_turns * 2):]
+                self._ollama_history[user_id] = updated
+
+                return reply
+        except httpx.ConnectError:
+            return (
+                f"無法連線到本地 Ollama 伺服器 ({settings.OLLAMA_HOST}) 🔌\n"
+                f"請確認本地已啟動 Ollama 服務！(指令：`ollama run {settings.OLLAMA_MODEL}`)"
+            )
+        except Exception as e:
+            logger.error(f"Ollama Chat error: {e}", exc_info=True)
+            return f"本地模型處理時出錯 😵 錯誤：{str(e)[:120]}"
+
     async def _chat_gemini(self, user_id: str, text: str) -> str:
         if not self.is_configured():
             return (
                 f"嗨！我是「{settings.BOT_NAME}」👋\n\n"
-                "目前設定為 Gemini 模式，請在 .env 填入有效的 GEMINI_API_KEY！🔑\n"
-                "💡 若想完全使用本地端免 API Key，可將 .env 的 AI_PROVIDER 改為 ollama！"
+                "目前切換為 Gemini 模式，請在 .env 填入有效的 GEMINI_API_KEY！🔑\n"
+                "💡 若想完全使用本地端免 API Key，可將 AI_PROVIDER 改為 ollama！"
             )
 
         try:
@@ -166,7 +213,6 @@ class AIService:
             )
             reply = response.text or "（笑著看著你，不知道怎麼回）"
 
-            # 更新對話記憶
             model_content = types.Content(role="model", parts=[types.Part.from_text(text=reply)])
             updated = contents + [model_content]
             if len(updated) > self.max_history_turns * 2:
@@ -180,48 +226,6 @@ class AIService:
             if "not found" in err_msg.lower() or "404" in err_msg:
                 return f"😵 找不到模型 `{settings.GEMINI_MODEL}`，建議在 .env 設定為 gemini-2.5-flash。"
             return f"腦袋剛才打結了 😵 錯誤：{err_msg[:120]}"
-
-    async def _chat_ollama(self, user_id: str, text: str) -> str:
-        """純本地端離線大模型 (Ollama) 對話"""
-        try:
-            history = self._ollama_history.get(user_id, [])
-            messages = [{"role": "system", "content": FRIEND_SYSTEM_INSTRUCTION}] + history + [
-                {"role": "user", "content": text}
-            ]
-
-            async with httpx.AsyncClient(timeout=60.0) as http:
-                res = await http.post(
-                    f"{settings.OLLAMA_HOST.rstrip('/')}/api/chat",
-                    json={
-                        "model": settings.OLLAMA_MODEL,
-                        "messages": messages,
-                        "stream": False,
-                        "options": {"temperature": 0.7}
-                    }
-                )
-                if res.status_code != 200:
-                    return f"本地 Ollama 回應錯誤 (HTTP {res.status_code})：{res.text[:100]}"
-
-                data = res.json()
-                reply = data.get("message", {}).get("content", "").strip() or "（笑著看著你，不知道怎麼回）"
-
-                updated = history + [
-                    {"role": "user", "content": text},
-                    {"role": "assistant", "content": reply}
-                ]
-                if len(updated) > self.max_history_turns * 2:
-                    updated = updated[-(self.max_history_turns * 2):]
-                self._ollama_history[user_id] = updated
-
-                return reply
-        except httpx.ConnectError:
-            return (
-                f"無法連線到本地 Ollama 伺服器 ({settings.OLLAMA_HOST}) 🔌\n"
-                "請確認本地已安裝並啟動 Ollama (指令：`ollama run llama3.2`)！"
-            )
-        except Exception as e:
-            logger.error(f"Ollama Chat error: {e}", exc_info=True)
-            return f"本地模型處理時出錯 😵 錯誤：{str(e)[:120]}"
 
     async def analyze_image(self, user_id: str, image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
         """圖片辨識（收據、講義、白板、美食等）"""
@@ -256,21 +260,40 @@ class AIService:
                 logger.error(f"Image error: {e}", exc_info=True)
                 return f"看照片時眼睛花了 😵 錯誤：{str(e)[:120]}"
         else:
+            vision_model = settings.OLLAMA_VISION_MODEL or settings.OLLAMA_MODEL
             try:
                 img_b64 = base64.b64encode(image_bytes).decode("utf-8")
-                async with httpx.AsyncClient(timeout=60.0) as http:
+                async with httpx.AsyncClient(timeout=90.0) as http:
                     res = await http.post(
                         f"{settings.OLLAMA_HOST.rstrip('/')}/api/generate",
-                        json={"model": settings.OLLAMA_MODEL, "prompt": prompt, "images": [img_b64], "stream": False}
+                        json={
+                            "model": vision_model,
+                            "prompt": prompt,
+                            "images": [img_b64],
+                            "system": FRIEND_SYSTEM_INSTRUCTION,
+                            "stream": False
+                        }
                     )
+                    if res.status_code != 200:
+                        return (
+                            f"本地視覺模型 `{vision_model}` 回應失敗！\n"
+                            f"提示：請確認已下載支援視覺的多模態模型，例如執行：`ollama pull {vision_model}`"
+                        )
                     return res.json().get("response", "我看過這張圖片了！")
             except Exception as e:
-                return f"本地圖片分析失敗 😵 錯誤：{str(e)[:120]}"
+                return (
+                    f"本地圖片分析失敗 😵\n"
+                    f"若尚未安裝視覺模型，請在終端機執行：`ollama pull {vision_model}`\n"
+                    f"詳細錯誤：{str(e)[:100]}"
+                )
 
     async def transcribe_audio(self, user_id: str, audio_bytes: bytes, mime_type: str = "audio/m4a") -> str:
         """語音轉逐字稿與重點摘要"""
         if settings.AI_PROVIDER.lower() != "gemini":
-            return "語音辨識目前請在 .env 將 AI_PROVIDER 改為 gemini！🎙️"
+            return (
+                "🎙️ 語音辨識目前需要較高運算資源，"
+                "若要使用語音轉逐字稿功能，請在 .env 將 `AI_PROVIDER` 改為 `gemini` 並填入 API Key 喔！"
+            )
         if not self.is_configured():
             return "請先在 .env 設定 GEMINI_API_KEY 才能處理語音！🎙️"
         try:
@@ -441,7 +464,9 @@ async def _safe_loading(api: Any, chat_id: str, seconds: int = 20):
 async def lifespan(app: FastAPI):
     logger.info("=" * 60)
     logger.info(f"✨ LINE AI 好友「{settings.BOT_NAME}」已啟動！")
-    logger.info(f"🤖 引擎：{settings.AI_PROVIDER.upper()} | 模型：{settings.GEMINI_MODEL if settings.AI_PROVIDER=='gemini' else settings.OLLAMA_MODEL}")
+    logger.info(f"🤖 引擎：{settings.AI_PROVIDER.upper()} | 文字模型：{settings.OLLAMA_MODEL if settings.AI_PROVIDER=='ollama' else settings.GEMINI_MODEL}")
+    if settings.AI_PROVIDER == "ollama":
+        logger.info(f"📸 視覺模型：{settings.OLLAMA_VISION_MODEL} (Host: {settings.OLLAMA_HOST})")
     logger.info(f"🌐 本地 Web 測試台：http://localhost:{settings.PORT}")
     logger.info(f"🔔 LINE Webhook：http://localhost:{settings.PORT}/callback")
     logger.info(f"💡 本地對外穿透指令：ngrok http {settings.PORT}")
@@ -457,7 +482,7 @@ WEB_CHAT_HTML = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI 隨身好友「小光」- 本地測試台</title>
+  <title>AI 隨身好友「小光」- 本地測試台 (Ollama 模式)</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; background: #f0f2f5; height: 100vh; display: flex; justify-content: center; align-items: center; padding: 12px; }
@@ -482,10 +507,10 @@ WEB_CHAT_HTML = """<!DOCTYPE html>
   <div class="chat-card">
     <div class="header">
       <h1>✨ AI 好友「小光」本地測試台</h1>
-      <span style="font-size: 0.85rem; opacity: 0.9;">🟢 本地連線就緒</span>
+      <span style="font-size: 0.85rem; opacity: 0.9;">🟢 本地離線模式 (Ollama)</span>
     </div>
     <div class="chat-box" id="box">
-      <div class="msg bot">哈囉！我是「小光」✨ 你的專屬 AI 好友！你在本地端隨時可以在這裡打字跟我聊天測試喔！😊</div>
+      <div class="msg bot">哈囉！我是「小光」✨ 你的專屬本地 AI 好友！目前已切換為本地離線模式，你可以直接打字跟我聊天測試喔！😊</div>
     </div>
     <div class="quick-bar">
       <button class="quick-btn" onclick="send('今天過得好充實，你在幹嘛呢？')">💬 聊聊今天</button>
@@ -554,7 +579,8 @@ async def health():
         "status": "healthy",
         "bot": settings.BOT_NAME,
         "provider": settings.AI_PROVIDER,
-        "model": settings.GEMINI_MODEL if settings.AI_PROVIDER=="gemini" else settings.OLLAMA_MODEL,
+        "text_model": settings.OLLAMA_MODEL if settings.AI_PROVIDER == "ollama" else settings.GEMINI_MODEL,
+        "vision_model": settings.OLLAMA_VISION_MODEL if settings.AI_PROVIDER == "ollama" else settings.GEMINI_MODEL,
     }
 
 @app.post("/callback")
@@ -585,7 +611,7 @@ async def callback(request: Request, x_line_signature: str = Header(None, alias=
 # 7. 本地 CLI 互動模式與直接執行入口
 # ===================================================================
 async def run_cli_mode():
-    print(f"\n✨ 進入「{settings.BOT_NAME}」本地終端對話模式 (輸入 exit 離開)")
+    print(f"\n✨ 進入「{settings.BOT_NAME}」本地終端對話模式 (Ollama 本地離線模式，輸入 exit 離開)")
     print("-" * 50)
     while True:
         try:
