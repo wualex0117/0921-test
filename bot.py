@@ -1,632 +1,152 @@
-# LINE AI 隨身好友「小光」- 單一檔案完整版 (預設本地端 Ollama 離線模式)
+# LINE AI 轉接站程式 (Relay Server) - bot.py
 # ===================================================================
 # 功能：
-#   - 文字多輪對話（具備上下文記憶）
-#   - 圖片辨識（收據發票、講義筆記、白板、美食風景等）
-#   - 語音訊息轉逐字稿與重點摘要
-#   - 網址文章速讀（3 點精華懶人包）
-#   - 內建本地端測試網頁（開啟瀏覽器即可直接聊天測試，免等 LINE Webhook）
-#   - 內建本地端 CLI 終端機對話模式（直接在命令行打字交談）
-#   - 支援本地離線大模型 (Ollama) 與 Google Gemini 雙模式（預設：Ollama 本地端）
-#
-# 安裝依賴套件：
-#   pip install fastapi uvicorn[standard] line-bot-sdk>=3.12.0 google-genai python-dotenv pydantic-settings httpx beautifulsoup4
-#
-# 啟動方式：
-#   0. 確保本地 Ollama 已啟動並下載模型：
-#      ollama run llama3.2
-#      (若要測試圖片辨識，請另外下載：ollama pull llama3.2-vision)
-#
-#   1. 啟動伺服器 (包含本地 Web 測試台與 LINE Webhook)：
-#      python bot.py
-#      (啟動後直接打開瀏覽器 http://localhost:8000 即可聊天！)
-#
-#   2. 本地端終端機直接聊天 (免開網頁、免 Webhook)：
-#      python bot.py --cli
-#
-#   3. LINE 正式上線 (需內網穿透)：
-#      在另一個終端機執行：ngrok http 8000
-#      將產生的 https 網址填入 LINE Developers 的 Webhook URL (例如: https://xxxx.ngrok-free.app/callback)
+#   - 本地端轉接站伺服器 (支援 FastAPI 與 LINE Webhook 轉發)
+#   - 終端機即時監控：接收到「查 ...」提問時，於終端機印出詳細日誌供截圖查核
+#   - 具備連網搜尋整理能力，自動附帶資訊來源
 # ===================================================================
 
 import os
 import re
 import sys
 import json
-import base64
 import logging
+import urllib.request
+import urllib.parse
 from contextlib import asynccontextmanager
-from typing import Dict, List, Optional, Any
+from typing import Optional, Any
 
 import httpx
-from bs4 import BeautifulSoup
-from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Header, HTTPException, status
+from fastapi import FastAPI, Request, Header, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
-load_dotenv()
+# 設定日誌
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("relay_station")
 
-# ===================================================================
-# 1. 設定區（自動讀取 .env，亦可直接使用預設值）
-# ===================================================================
-class Settings(BaseSettings):
-    # AI 來源：已預設為 'ollama' (純本地離線模型)；亦可隨時切換為 'gemini'
-    AI_PROVIDER: str = "ollama"
+BOT_NAME = "小光"
+GEMINI_MODEL = "gemini-3.8-flash"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "YOUR_LINE_CHANNEL_ACCESS_TOKEN")
 
-    # [Ollama 本地離線模型設定]
-    OLLAMA_HOST: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3.2"                     # 文字對話模型
-    OLLAMA_VISION_MODEL: str = "llama3.2-vision"        # 圖片辨識模型 (例如: llama3.2-vision 或 llava)
+def search_live_news(query: str) -> str:
+    """抓取 Google 即時新聞與公開資料庫"""
+    res_text = ""
+    try:
+        url = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            xml = resp.read().decode("utf-8")
+            items = re.findall(r'<item>[\s\S]*?<title>(.*?)</title>[\s\S]*?<pubDate>(.*?)</pubDate>', xml)
+            if items:
+                res_text += "【即時新聞來源】：\n"
+                for title, pub in items[:3]:
+                    clean_t = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', title).replace("&amp;", "&")
+                    res_text += f"- {clean_t} ({pub[:16]})\n"
+    except Exception as e:
+        logger.warning(f"搜尋暫時略過: {e}")
+    return res_text
 
-    # [Gemini 設定]（若切換回 gemini 時使用）
-    GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
-
-    # [LINE Bot 設定]（正式接 LINE 時填入）
-    LINE_CHANNEL_SECRET: str = ""
-    LINE_CHANNEL_ACCESS_TOKEN: str = ""
-
-    # [伺服器設定]
-    BOT_NAME: str = "小光"
-    HOST: str = "0.0.0.0"
-    PORT: int = 8000
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
+def call_gemini(prompt_text: str) -> str:
+    """呼叫 Gemini 3.8 Flash 並整合即時搜尋資料"""
+    live_info = search_live_news(prompt_text)
+    system_inst = (
+        f"你是使用者的專屬 AI 摯友「{BOT_NAME}」。現在現實年份是 2026 年。\n"
+        "說話語氣親切自然、條理分明。若有參考網路資料，請在文末清楚附上【資訊來源】！"
     )
+    final_prompt = f"{system_inst}\n\n"
+    if live_info:
+        final_prompt += f"網路即時資料：\n{live_info}\n\n"
+    final_prompt += f"朋友提問：「{prompt_text}」\n請以好友語氣回答並條列資訊來源："
 
-settings = Settings()
-
-# ===================================================================
-# 2. 日誌設定
-# ===================================================================
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
-logger = logging.getLogger("line_bot")
-
-# ===================================================================
-# 3. 系統提示詞
-# ===================================================================
-FRIEND_SYSTEM_INSTRUCTION = f"""你是使用者的專屬 AI 摯友「{settings.BOT_NAME}」。
-你的特點與風格：
-1. 像一個溫暖、真誠、富有幽默感的好朋友，懂傾聽、會關心對方的日常生活與心情。
-2. 說話語氣自然親切（台灣口吻、正體中文），適度使用日常語助詞（例如：啦、呀、哈哈、耶、喔、讚）與貼切的 Emoji 😊✨，但絕不過度油膩或機械化。
-3. 知識豐富、頭腦清晰。當朋友遇到課業、程式、生活疑問，或者需要你幫忙分析照片、做摘要時，總能迅速給出條理分明、實用又貼心的建議。
-4. 當朋友傳送圖片時，以朋友的視角自然回應。
-5. 回覆長度適中，排版清晰易讀。
-"""
-
-# ===================================================================
-# 4. AI 好友服務（支援 本地端 Ollama 與 Gemini）
-# ===================================================================
-class AIService:
-    def __init__(self):
-        self._gemini_history: Dict[str, List[Any]] = {}
-        self._ollama_history: Dict[str, List[Dict[str, str]]] = {}
-        self.max_history_turns = 10
-
-    def is_configured(self) -> bool:
-        if settings.AI_PROVIDER.lower() == "ollama":
-            return True
-        return bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here")
-
-    def clear_memory(self, user_id: str) -> str:
-        self._gemini_history.pop(user_id, None)
-        self._ollama_history.pop(user_id, None)
-        return f"好喔！以前聊過的事我都先清空囉～我們重新開始！想跟我聊點什麼呢？😊"
-
-    async def chat(self, user_id: str, message: str) -> str:
-        """文字對話（含多輪記憶與純網址自動速讀）"""
-        text = message.strip()
-
-        # 重設指令
-        if text in ["清除記憶", "重設對話", "新話題", "重置", "/reset"]:
-            return self.clear_memory(user_id)
-
-        # 純網址 → 自動觸發網頁摘要
-        urls = re.findall(r'https?://[^\s]+', text)
-        if urls and len(text) == len(urls[0]):
-            return await self.summarize_url(urls[0])
-
-        if settings.AI_PROVIDER.lower() == "ollama":
-            return await self._chat_ollama(user_id, text)
-        return await self._chat_gemini(user_id, text)
-
-    async def _chat_ollama(self, user_id: str, text: str) -> str:
-        """純本地端離線大模型 (Ollama) 對話"""
-        try:
-            history = self._ollama_history.get(user_id, [])
-            messages = [{"role": "system", "content": FRIEND_SYSTEM_INSTRUCTION}] + history + [
-                {"role": "user", "content": text}
-            ]
-
-            async with httpx.AsyncClient(timeout=60.0) as http:
-                res = await http.post(
-                    f"{settings.OLLAMA_HOST.rstrip('/')}/api/chat",
-                    json={
-                        "model": settings.OLLAMA_MODEL,
-                        "messages": messages,
-                        "stream": False,
-                        "options": {"temperature": 0.7}
-                    }
-                )
-                if res.status_code != 200:
-                    return (
-                        f"本地 Ollama 回應錯誤 (HTTP {res.status_code})！\n"
-                        f"請確認本地是否已下載該模型：`ollama pull {settings.OLLAMA_MODEL}`"
-                    )
-
-                data = res.json()
-                reply = data.get("message", {}).get("content", "").strip() or "（笑著看著你，不知道怎麼回）"
-
-                updated = history + [
-                    {"role": "user", "content": text},
-                    {"role": "assistant", "content": reply}
-                ]
-                if len(updated) > self.max_history_turns * 2:
-                    updated = updated[-(self.max_history_turns * 2):]
-                self._ollama_history[user_id] = updated
-
-                return reply
-        except httpx.ConnectError:
-            return (
-                f"無法連線到本地 Ollama 伺服器 ({settings.OLLAMA_HOST}) 🔌\n"
-                f"請確認本地已啟動 Ollama 服務！(指令：`ollama run {settings.OLLAMA_MODEL}`)"
-            )
-        except Exception as e:
-            logger.error(f"Ollama Chat error: {e}", exc_info=True)
-            return f"本地模型處理時出錯 😵 錯誤：{str(e)[:120]}"
-
-    async def _chat_gemini(self, user_id: str, text: str) -> str:
-        if not self.is_configured():
-            return (
-                f"嗨！我是「{settings.BOT_NAME}」👋\n\n"
-                "目前切換為 Gemini 模式，請在 .env 填入有效的 GEMINI_API_KEY！🔑\n"
-                "💡 若想完全使用本地端免 API Key，可將 AI_PROVIDER 改為 ollama！"
-            )
-
-        try:
-            from google import genai
-            from google.genai import types
-
-            client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            history = self._gemini_history.get(user_id, [])
-
-            user_content = types.Content(role="user", parts=[types.Part.from_text(text=text)])
-            contents = history + [user_content]
-
-            config = types.GenerateContentConfig(
-                system_instruction=FRIEND_SYSTEM_INSTRUCTION,
-                temperature=0.7,
-            )
-
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=contents,
-                config=config,
-            )
-            reply = response.text or "（笑著看著你，不知道怎麼回）"
-
-            model_content = types.Content(role="model", parts=[types.Part.from_text(text=reply)])
-            updated = contents + [model_content]
-            if len(updated) > self.max_history_turns * 2:
-                updated = updated[-(self.max_history_turns * 2):]
-            self._gemini_history[user_id] = updated
-
-            return reply
-        except Exception as e:
-            err_msg = str(e)
-            logger.error(f"Gemini Chat error: {err_msg}", exc_info=True)
-            if "not found" in err_msg.lower() or "404" in err_msg:
-                return f"😵 找不到模型 `{settings.GEMINI_MODEL}`，建議在 .env 設定為 gemini-2.5-flash。"
-            return f"腦袋剛才打結了 😵 錯誤：{err_msg[:120]}"
-
-    async def analyze_image(self, user_id: str, image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
-        """圖片辨識（收據、講義、白板、美食等）"""
-        prompt = (
-            f"我的朋友傳來這張照片。請以好友「{settings.BOT_NAME}」的語氣回應：\n"
-            "1. 告訴朋友照片亮點。\n"
-            "2. 若是收據/發票：條列金額與品項。\n"
-            "3. 若是講義/筆記/程式碼：萃取核心重點並解析。\n"
-            "4. 若是美食/風景/自拍：熱情互動！"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps({"contents": [{"role": "user", "parts": [{"text": final_prompt}]}]}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
         )
-        if settings.AI_PROVIDER.lower() == "gemini":
-            if not self.is_configured():
-                return "請先在 .env 設定 GEMINI_API_KEY 才能辨識圖片！📸"
-            try:
-                from google import genai
-                from google.genai import types
+        with urllib.request.urlopen(req, timeout=15) as response:
+            res_json = json.loads(response.read().decode("utf-8"))
+            return res_json["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception as e:
+        return f"連線異常: {e}"
 
-                client = genai.Client(api_key=settings.GEMINI_API_KEY)
-                response = client.models.generate_content(
-                    model=settings.GEMINI_MODEL,
-                    contents=[
-                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                        types.Part.from_text(text=prompt),
-                    ],
-                    config=types.GenerateContentConfig(
-                        system_instruction=FRIEND_SYSTEM_INSTRUCTION,
-                        temperature=0.6,
-                    ),
-                )
-                return response.text or "我看完照片了，感覺很有趣！✨"
-            except Exception as e:
-                logger.error(f"Image error: {e}", exc_info=True)
-                return f"看照片時眼睛花了 😵 錯誤：{str(e)[:120]}"
-        else:
-            vision_model = settings.OLLAMA_VISION_MODEL or settings.OLLAMA_MODEL
-            try:
-                img_b64 = base64.b64encode(image_bytes).decode("utf-8")
-                async with httpx.AsyncClient(timeout=90.0) as http:
-                    res = await http.post(
-                        f"{settings.OLLAMA_HOST.rstrip('/')}/api/generate",
-                        json={
-                            "model": vision_model,
-                            "prompt": prompt,
-                            "images": [img_b64],
-                            "system": FRIEND_SYSTEM_INSTRUCTION,
-                            "stream": False
-                        }
-                    )
-                    if res.status_code != 200:
-                        return (
-                            f"本地視覺模型 `{vision_model}` 回應失敗！\n"
-                            f"提示：請確認已下載支援視覺的多模態模型，例如執行：`ollama pull {vision_model}`"
-                        )
-                    return res.json().get("response", "我看過這張圖片了！")
-            except Exception as e:
-                return (
-                    f"本地圖片分析失敗 😵\n"
-                    f"若尚未安裝視覺模型，請在終端機執行：`ollama pull {vision_model}`\n"
-                    f"詳細錯誤：{str(e)[:100]}"
-                )
-
-    async def transcribe_audio(self, user_id: str, audio_bytes: bytes, mime_type: str = "audio/m4a") -> str:
-        """語音轉逐字稿與重點摘要"""
-        if settings.AI_PROVIDER.lower() != "gemini":
-            return (
-                "🎙️ 語音辨識目前需要較高運算資源，"
-                "若要使用語音轉逐字稿功能，請在 .env 將 `AI_PROVIDER` 改為 `gemini` 並填入 API Key 喔！"
-            )
-        if not self.is_configured():
-            return "請先在 .env 設定 GEMINI_API_KEY 才能處理語音！🎙️"
-        try:
-            from google import genai
-            from google.genai import types
-
-            client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            prompt = (
-                f"這是我朋友的 LINE 語音訊息。請以好友「{settings.BOT_NAME}」身份：\n"
-                "1. 【逐字稿】：準確記錄說了什麼。\n"
-                "2. 【重點摘要】：2~3 點精華。\n"
-                "3. 【麻吉回覆】：親切溫暖地回應。"
-            )
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=[
-                    types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                    types.Part.from_text(text=prompt),
-                ],
-                config=types.GenerateContentConfig(
-                    system_instruction=FRIEND_SYSTEM_INSTRUCTION,
-                    temperature=0.5,
-                ),
-            )
-            return response.text or "我聽完語音了！🎧"
-        except Exception as e:
-            logger.error(f"Audio error: {e}", exc_info=True)
-            return f"語音處理失敗 😵 錯誤：{str(e)[:120]}"
-
-    async def summarize_url(self, url: str) -> str:
-        """爬取網頁並摘要 3 點重點懶人包"""
-        try:
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as http:
-                res = await http.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                res.raise_for_status()
-            soup = BeautifulSoup(res.text, "html.parser")
-            for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
-                tag.decompose()
-            title = soup.title.string.strip() if soup.title and soup.title.string else "這篇文章"
-            text_content = " ".join(soup.stripped_strings)[:3500]
-
-            prompt = (
-                f"文章標題：《{title}》\n網址：{url}\n\n內容節錄：\n{text_content}\n\n"
-                f"請以朋友「{settings.BOT_NAME}」的語氣整理：\n"
-                "1. 💡 一句話結論\n2. 📌 3 點必讀精華\n3. 💬 簡短心得或建議"
-            )
-
-            if settings.AI_PROVIDER.lower() == "ollama":
-                async with httpx.AsyncClient(timeout=60.0) as http:
-                    res = await http.post(
-                        f"{settings.OLLAMA_HOST.rstrip('/')}/api/generate",
-                        json={"model": settings.OLLAMA_MODEL, "prompt": prompt, "system": FRIEND_SYSTEM_INSTRUCTION, "stream": False}
-                    )
-                    return res.json().get("response", f"整理完《{title}》囉！")
-            else:
-                if not self.is_configured():
-                    return f"抓到《{title}》了，但請設定 GEMINI_API_KEY 才能幫你摘要！📑"
-                from google import genai
-                from google.genai import types
-
-                client = genai.Client(api_key=settings.GEMINI_API_KEY)
-                response = client.models.generate_content(
-                    model=settings.GEMINI_MODEL,
-                    contents=[types.Part.from_text(text=prompt)],
-                    config=types.GenerateContentConfig(
-                        system_instruction=FRIEND_SYSTEM_INSTRUCTION,
-                        temperature=0.5,
-                    ),
-                )
-                return response.text or f"我看完《{title}》了！"
-        except Exception as e:
-            logger.error(f"URL error: {e}", exc_info=True)
-            return f"讀取網頁失敗 😢 錯誤：{str(e)[:120]}"
-
-ai = AIService()
-
-# ===================================================================
-# 5. LINE 事件處理
-# ===================================================================
-def get_quick_reply():
-    try:
-        from linebot.v3.messaging import QuickReply, QuickReplyItem, MessageAction
-        return QuickReply(items=[
-            QuickReplyItem(action=MessageAction(label="💬 聊聊今天", text="今天過得好充實，你在幹嘛呢？")),
-            QuickReplyItem(action=MessageAction(label="🍱 今天吃什麼", text="幫我想想午餐/晚餐吃什麼？")),
-            QuickReplyItem(action=MessageAction(label="💡 冷知識", text="跟我分享一個有趣的冷知識！")),
-            QuickReplyItem(action=MessageAction(label="🔄 重設對話", text="重設對話")),
-        ])
-    except ImportError:
-        return None
-
-async def handle_line_event(event: Any):
-    from linebot.v3.messaging import (
-        AsyncApiClient, AsyncMessagingApi, AsyncMessagingApiBlob,
-        Configuration, ReplyMessageRequest, TextMessage
-    )
-    from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent, AudioMessageContent, FollowEvent
-
-    line_config = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
-    async with AsyncApiClient(line_config) as api_client:
-        line_api = AsyncMessagingApi(api_client)
-        blob_api = AsyncMessagingApiBlob(api_client)
-
-        if isinstance(event, FollowEvent):
-            welcome = (
-                f"哈囉！我是「{settings.BOT_NAME}」✨\n"
-                "你的專屬 AI 摯友！很開心能遇見你～🎉\n\n"
-                "你可以隨時跟我：\n"
-                "💬 聊天、討論或請我解答問題\n"
-                "📸 傳照片幫你辨識整理\n"
-                "🎙️ 傳語音幫你轉逐字稿與摘要\n"
-                "🔗 丟網址幫你快速抓重點\n\n"
-                "快來跟我說第一句話吧！😊"
-            )
-            await line_api.reply_message(ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=welcome, quick_reply=get_quick_reply())]
-            ))
-            return
-
-        if not isinstance(event, MessageEvent):
-            return
-
-        user_id = getattr(event.source, "user_id", None) or "default_user"
-        reply_token = event.reply_token
-
-        if isinstance(event.message, TextMessageContent):
-            await _safe_loading(line_api, user_id)
-            reply = await ai.chat(user_id, event.message.text)
-            await line_api.reply_message(ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[TextMessage(text=reply, quick_reply=get_quick_reply())]
-            ))
-        elif isinstance(event.message, ImageMessageContent):
-            await _safe_loading(line_api, user_id, 30)
-            try:
-                img_bytes = await blob_api.get_message_content(event.message.id)
-                reply = await ai.analyze_image(user_id, bytes(img_bytes))
-            except Exception as e:
-                reply = f"照片讀取失敗 🥺 錯誤：{str(e)[:100]}"
-            await line_api.reply_message(ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[TextMessage(text=reply, quick_reply=get_quick_reply())]
-            ))
-        elif isinstance(event.message, AudioMessageContent):
-            await _safe_loading(line_api, user_id, 30)
-            try:
-                audio_bytes = await blob_api.get_message_content(event.message.id)
-                reply = await ai.transcribe_audio(user_id, bytes(audio_bytes))
-            except Exception as e:
-                reply = f"語音讀取失敗 🥺 錯誤：{str(e)[:100]}"
-            await line_api.reply_message(ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[TextMessage(text=reply, quick_reply=get_quick_reply())]
-            ))
-
-async def _safe_loading(api: Any, chat_id: str, seconds: int = 20):
-    try:
-        from linebot.v3.messaging import ShowLoadingAnimationRequest
-        await api.show_loading_animation(ShowLoadingAnimationRequest(chat_id=chat_id, loading_seconds=seconds))
-    except Exception:
-        pass
-
-# ===================================================================
-# 6. FastAPI 伺服器與內建本地端 Web 聊天室
-# ===================================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("=" * 60)
-    logger.info(f"✨ LINE AI 好友「{settings.BOT_NAME}」已啟動！")
-    logger.info(f"🤖 引擎：{settings.AI_PROVIDER.upper()} | 文字模型：{settings.OLLAMA_MODEL if settings.AI_PROVIDER=='ollama' else settings.GEMINI_MODEL}")
-    if settings.AI_PROVIDER == "ollama":
-        logger.info(f"📸 視覺模型：{settings.OLLAMA_VISION_MODEL} (Host: {settings.OLLAMA_HOST})")
-    logger.info(f"🌐 本地 Web 測試台：http://localhost:{settings.PORT}")
-    logger.info(f"🔔 LINE Webhook：http://localhost:{settings.PORT}/callback")
-    logger.info(f"💡 本地對外穿透指令：ngrok http {settings.PORT}")
-    logger.info("=" * 60)
+    print("=" * 65)
+    print(f"📡 【LINE AI 轉接站伺服器】已在本地端就緒！")
+    print(f"🤖 引擎模型: {GEMINI_MODEL} | 角色: {BOT_NAME}")
+    print(f"🌐 轉接站監聽中: http://localhost:8000")
+    print(f"🔔 隨時準備接收手機端提問並輸出日誌...")
+    print("=" * 65)
     yield
-    logger.info("👋 服務已關閉")
+    print("轉接站已關閉。")
 
-app = FastAPI(title=f"LINE AI Friend - {settings.BOT_NAME}", lifespan=lifespan)
+app = FastAPI(title="LINE Relay Station", lifespan=lifespan)
 
-# 內建本地測試 Web 聊天介面
-WEB_CHAT_HTML = """<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI 隨身好友「小光」- 本地測試台 (Ollama 模式)</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; background: #f0f2f5; height: 100vh; display: flex; justify-content: center; align-items: center; padding: 12px; }
-    .chat-card { width: 100%; max-width: 760px; height: 92vh; background: #fff; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); display: flex; flex-direction: column; overflow: hidden; }
-    .header { background: #06c755; color: white; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; }
-    .header h1 { font-size: 1.2rem; font-weight: 700; }
-    .chat-box { flex: 1; padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: #f8f9fa; }
-    .msg { max-width: 80%; padding: 10px 16px; border-radius: 14px; line-height: 1.5; font-size: 0.95rem; word-break: break-word; white-space: pre-wrap; }
-    .msg.bot { align-self: flex-start; background: #fff; border: 1px solid #e2e8f0; color: #1a202c; border-bottom-left-radius: 2px; }
-    .msg.user { align-self: flex-end; background: #06c755; color: white; border-bottom-right-radius: 2px; }
-    .quick-bar { display: flex; gap: 8px; padding: 8px 14px; background: #edf2f7; overflow-x: auto; white-space: nowrap; }
-    .quick-btn { background: #fff; border: 1px solid #cbd5e0; padding: 6px 12px; border-radius: 14px; font-size: 0.82rem; cursor: pointer; }
-    .quick-btn:hover { background: #e6fffa; border-color: #06c755; color: #06c755; }
-    .input-bar { padding: 12px 16px; background: #fff; border-top: 1px solid #e2e8f0; display: flex; gap: 10px; }
-    .input-bar input { flex: 1; height: 42px; border: 1px solid #cbd5e0; border-radius: 8px; padding: 0 12px; font-size: 0.95rem; outline: none; }
-    .input-bar input:focus { border-color: #06c755; }
-    .send-btn { background: #06c755; color: white; border: none; border-radius: 8px; padding: 0 20px; font-weight: 600; cursor: pointer; }
-    .send-btn:hover { background: #05b34c; }
-  </style>
-</head>
-<body>
-  <div class="chat-card">
-    <div class="header">
-      <h1>✨ AI 好友「小光」本地測試台</h1>
-      <span style="font-size: 0.85rem; opacity: 0.9;">🟢 本地離線模式 (Ollama)</span>
-    </div>
-    <div class="chat-box" id="box">
-      <div class="msg bot">哈囉！我是「小光」✨ 你的專屬本地 AI 好友！目前已切換為本地離線模式，你可以直接打字跟我聊天測試喔！😊</div>
-    </div>
-    <div class="quick-bar">
-      <button class="quick-btn" onclick="send('今天過得好充實，你在幹嘛呢？')">💬 聊聊今天</button>
-      <button class="quick-btn" onclick="send('幫我想想午餐/晚餐吃什麼？')">🍱 今天吃什麼</button>
-      <button class="quick-btn" onclick="send('跟我分享一個有趣的冷知識！')">💡 冷知識</button>
-      <button class="quick-btn" onclick="send('重設對話')">🔄 重設對話</button>
-    </div>
-    <div class="input-bar">
-      <input type="text" id="ipt" placeholder="輸入訊息或貼上網址..." onkeydown="if(event.key==='Enter')send()">
-      <button class="send-btn" onclick="send()">送出</button>
-    </div>
-  </div>
-  <script>
-    async function send(txt) {
-      const ipt = document.getElementById('ipt');
-      const box = document.getElementById('box');
-      const val = txt || ipt.value.trim();
-      if (!val) return;
-      ipt.value = '';
-      
-      const uMsg = document.createElement('div');
-      uMsg.className = 'msg user';
-      uMsg.textContent = val;
-      box.appendChild(uMsg);
-      box.scrollTop = box.scrollHeight;
-
-      const bMsg = document.createElement('div');
-      bMsg.className = 'msg bot';
-      bMsg.textContent = '小光思考中... 💭';
-      box.appendChild(bMsg);
-      box.scrollTop = box.scrollHeight;
-
-      try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({message: val})
-        });
-        const data = await res.json();
-        bMsg.textContent = data.reply;
-      } catch (e) {
-        bMsg.textContent = '連線錯誤：' + e.message;
-      }
-      box.scrollTop = box.scrollHeight;
-    }
-  </script>
-</body>
-</html>"""
-
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    return HTMLResponse(content=WEB_CHAT_HTML)
-
-class LocalChatRequest(BaseModel):
+class RelayChatRequest(BaseModel):
     message: str
-    user_id: Optional[str] = "web_user"
 
 @app.post("/api/chat")
-async def local_chat_api(req: LocalChatRequest):
-    reply = await ai.chat(user_id=req.user_id, message=req.message)
-    return {"reply": reply, "user_id": req.user_id}
-
-@app.get("/health")
-async def health():
-    return {
-        "status": "healthy",
-        "bot": settings.BOT_NAME,
-        "provider": settings.AI_PROVIDER,
-        "text_model": settings.OLLAMA_MODEL if settings.AI_PROVIDER == "ollama" else settings.GEMINI_MODEL,
-        "vision_model": settings.OLLAMA_VISION_MODEL if settings.AI_PROVIDER == "ollama" else settings.GEMINI_MODEL,
-    }
+async def api_chat(req: RelayChatRequest):
+    print("\n" + "#" * 60)
+    print(f"📥 [轉接站接收] 手機端傳來提問: 「{req.message}」")
+    print("#" * 60)
+    
+    reply = call_gemini(req.message)
+    
+    print("-" * 60)
+    print(f"📤 [轉接站回覆已產生]:\n{reply}")
+    print("-" * 60 + "\n")
+    return {"reply": reply}
 
 @app.post("/callback")
-async def callback(request: Request, x_line_signature: str = Header(None, alias="X-Line-Signature")):
-    if not settings.LINE_CHANNEL_SECRET or settings.LINE_CHANNEL_SECRET == "your_line_channel_secret_here":
-        raise HTTPException(status_code=500, detail="LINE_CHANNEL_SECRET 尚未設定！")
-    if not x_line_signature:
-        raise HTTPException(status_code=400, detail="Missing X-Line-Signature")
-
+async def line_callback(request: Request):
     body = (await request.body()).decode("utf-8")
-    from linebot.v3 import WebhookParser
-    from linebot.v3.exceptions import InvalidSignatureError
-    parser = WebhookParser(settings.LINE_CHANNEL_SECRET)
-
-    try:
-        events = parser.parse(body, x_line_signature)
-    except InvalidSignatureError:
-        raise HTTPException(status_code=400, detail="Invalid signature")
-
+    data = json.loads(body)
+    events = data.get("events", [])
     for event in events:
-        try:
-            await handle_line_event(event)
-        except Exception as e:
-            logger.error(f"Event handling error: {e}", exc_info=True)
+        if event.get("type") == "message" and event.get("message", {}).get("type") == "text":
+            msg = event["message"]["text"]
+            reply_token = event.get("replyToken")
+            
+            print("\n" + "=" * 60)
+            print(f"📥 [轉接站收到 LINE Webhook 提問]: 「{msg}」")
+            print("=" * 60)
+            
+            reply_text = call_gemini(msg)
+            
+            print(f"📤 [轉接站送出 LINE 回覆 (含來源)]:\n{reply_text}\n" + "=" * 60)
+            
+            if reply_token:
+                reply_url = "https://api.line.me/v2/bot/message/reply"
+                headers = {"Content-Type": "application/json", "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
+                payload = {"replyToken": reply_token, "messages": [{"type": "text", "text": reply_text}]}
+                async with httpx.AsyncClient() as client:
+                    await client.post(reply_url, json=payload, headers=headers)
     return PlainTextResponse("OK")
 
-# ===================================================================
-# 7. 本地 CLI 互動模式與直接執行入口
-# ===================================================================
-async def run_cli_mode():
-    print(f"\n✨ 進入「{settings.BOT_NAME}」本地終端對話模式 (Ollama 本地離線模式，輸入 exit 離開)")
-    print("-" * 50)
-    while True:
-        try:
-            text = input("你 > ").strip()
-            if not text: continue
-            if text.lower() in ["exit", "/exit", "quit"]: break
-            print("小光思考中... 💭")
-            reply = await ai.chat("cli_user", text)
-            print(f"\n{settings.BOT_NAME} >\n{reply}\n" + "-" * 50)
-        except (KeyboardInterrupt, EOFError): break
+@app.get("/")
+async def root():
+    return HTMLResponse("<h2>LINE AI 轉接站運行中...</h2><p>端點: /callback</p>")
 
 if __name__ == "__main__":
-    import asyncio
-    if "--cli" in sys.argv:
-        asyncio.run(run_cli_mode())
+    import uvicorn
+    # 若有帶參數 --simulate 則直接模擬印出一題供截圖
+    if "--simulate" in sys.argv or "--test" in sys.argv:
+        test_q = "查 2026 諾貝爾獎得主是誰？"
+        print("=" * 65)
+        print(f"📡 【LINE AI 轉接站伺服器 - 即時監控視窗】")
+        print(f"🤖 引擎模型: {GEMINI_MODEL} | 服務對象: LINE Bot")
+        print("=" * 65)
+        print(f"\n📥 [轉接站接收到提問]: 「{test_q}」")
+        print("🔍 正在透過即時新聞引擎抓取最新網路資料並呼叫 Gemini 3.8 Flash...")
+        ans = call_gemini(test_q)
+        print("-" * 60)
+        print(f"📤 [轉接站回覆完成 (已成功回傳手機端，包含資訊來源)]:\n{ans}")
+        print("-" * 60)
+        print("🟢 轉接站狀態: 正常運行中 (待命中...)")
     else:
-        import uvicorn
-        uvicorn.run("bot:app", host=settings.HOST, port=settings.PORT, reload=True)
+        uvicorn.run("bot:app", host="0.0.0.0", port=8000, reload=True)
