@@ -1,8 +1,13 @@
-# LINE AI 隨身好友「小光」- 智慧即時連網助理 🚀
+# 課程專題與作業倉庫 (Course Projects & Assignments)
 
-本專案實作了一套兼具 **Google Apps Script 雲端 24H 伺服器** 與 **本地端轉接站 (Relay Station)** 的 LINE AI 聊天機器人。整合了 Google Gemini 最新大語言模型，並具備即時網路搜尋與資訊來源附帶功能。
+本倉庫收錄「和 AI 一起寫程式」課程相關作業與期中專題：
+
+* 🍳 **【期中專題報告】AI 食譜檢索與創作小助手**：請前往 [`ai-recipe-assistant/`](./ai-recipe-assistant) 目錄查看完整專題與啟動說明。
+* 🤖 **【作業】LINE AI 隨身好友「小光」**：請見下方介紹與 [`bot.py`](./bot.py)、[`Code.gs`](./Code.gs)。
 
 ---
+
+# LINE AI 隨身好友「小光」- 智慧即時連網助理 🚀
 
 ## 🛠️ 一、怎麼裝 (Installation)
 
